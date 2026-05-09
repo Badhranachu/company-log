@@ -35,10 +35,10 @@ services:
     build:
       context: ./frontend
       args:
-        VITE_API_URL: http://localhost:5001/api/v1
-        VITE_WS_URL: ws://localhost:5001
+        VITE_API_URL: http://76.13.241.37:5000/api/v1
+        VITE_WS_URL: ws://76.13.241.37:5000
     ports:
-      - "80:80"
+      - "5050:80"
     depends_on:
       - backend
 
