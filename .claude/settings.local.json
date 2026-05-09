@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import secrets; print\\(secrets.token_urlsafe\\(50\\)\\)\")",
+      "Bash(python manage.py makemigrations chat --name add_attachment_type_and_index)",
+      "Bash(venv\\\\Scripts\\\\python.exe manage.py makemigrations chat --name add_attachment_type_and_index)"
+    ]
+  }
+}
