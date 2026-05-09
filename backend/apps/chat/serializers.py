@@ -27,7 +27,7 @@ class MessageSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Message
-        fields = '__all__'
+        exclude = ['hidden_by']
         read_only_fields = ['sender', 'created_at', 'edited_at', 'attachment_type', 'seen_by']
 
     def get_attachment_url(self, obj):

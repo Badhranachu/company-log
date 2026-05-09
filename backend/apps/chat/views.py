@@ -57,9 +57,11 @@ class MessageViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         chatbox_id = self.request.query_params.get('chatbox')
+        user = self.request.user
         qs = Message.objects.select_related('sender', 'chatbox', 'reply_to').prefetch_related('seen_by')
         if chatbox_id:
             qs = qs.filter(chatbox_id=chatbox_id)
+        qs = qs.exclude(hidden_by=user)
         return qs.order_by('-created_at')
 
     def get_serializer_class(self):
@@ -90,13 +92,20 @@ class MessageViewSet(viewsets.ModelViewSet):
 
     def destroy(self, request, *args, **kwargs):
         message = self.get_object()
+        scope = request.query_params.get('scope', 'everyone')
+
+        if scope == 'me':
+            message.hidden_by.add(request.user)
+            return response.Response(status=status.HTTP_204_NO_CONTENT)
+
+        # Delete for everyone
         if request.user.role != 'owner' and message.sender_id != request.user.id:
-            return response.Response({'detail': 'Only sender can delete.'}, status=status.HTTP_403_FORBIDDEN)
+            return response.Response({'detail': 'Only sender can delete for everyone.'}, status=status.HTTP_403_FORBIDDEN)
         if request.user.role != 'owner' and timezone.now() - message.created_at > timedelta(hours=1):
             return response.Response({'detail': 'Delete window expired (1 hour).'}, status=status.HTTP_403_FORBIDDEN)
         return super().destroy(request, *args, **kwargs)
 
-    @decorators.action(detail=True, methods=['post'])
+    @decorators.action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def toggle_tick(self, request, pk=None):
         message = self.get_object()
         if request.user.role != 'owner' and message.sender_id != request.user.id:
@@ -105,7 +114,7 @@ class MessageViewSet(viewsets.ModelViewSet):
         message.save(update_fields=['is_ticked'])
         return response.Response({'is_ticked': message.is_ticked})
 
-    @decorators.action(detail=True, methods=['post'])
+    @decorators.action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def toggle_pin(self, request, pk=None):
         message = self.get_object()
         chatbox = message.chatbox
@@ -115,7 +124,7 @@ class MessageViewSet(viewsets.ModelViewSet):
         message.save(update_fields=['is_pinned'])
         return response.Response({'is_pinned': message.is_pinned})
 
-    @decorators.action(detail=True, methods=['post'])
+    @decorators.action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def seen(self, request, pk=None):
         message = self.get_object()
         message.seen_by.add(request.user)

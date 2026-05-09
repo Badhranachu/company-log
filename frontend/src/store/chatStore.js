@@ -143,9 +143,9 @@ export const useChatStore = create((set, get) => ({
     const { data } = await api.post(`/messages/${messageId}/toggle_pin/`)
     set((s) => ({ messages: s.messages.map((m) => m.id === messageId ? { ...m, is_pinned: data.is_pinned } : m) }))
   },
-  async deleteMessage(messageId) {
+  async deleteMessage(messageId, scope = 'everyone') {
     try {
-      await api.delete(`/messages/${messageId}/`)
+      await api.delete(`/messages/${messageId}/?scope=${scope}`)
       set((s) => ({ messages: s.messages.filter((m) => m.id !== messageId) }))
     } catch (e) {
       toast.error(e?.response?.data?.detail || 'Unable to delete this message')
