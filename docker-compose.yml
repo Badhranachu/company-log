@@ -55,8 +55,8 @@ services:
       context: ./frontend
 
       args:
-        VITE_API_URL: http://localhost:6060/api/v1
-        VITE_WS_URL: ws://localhost:6060
+        VITE_API_URL: ${VITE_API_URL}
+        VITE_WS_URL: ${VITE_WS_URL}
 
     restart: unless-stopped
 

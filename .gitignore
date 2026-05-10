@@ -2,7 +2,7 @@ __pycache__/
 *.pyc
 node_modules/
 dist/
-# .env
+.env
 .venv/
 venv/
 backend/venv/
