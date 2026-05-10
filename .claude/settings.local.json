@@ -3,7 +3,16 @@
     "allow": [
       "Bash(python -c \"import secrets; print\\(secrets.token_urlsafe\\(50\\)\\)\")",
       "Bash(python manage.py makemigrations chat --name add_attachment_type_and_index)",
-      "Bash(venv\\\\Scripts\\\\python.exe manage.py makemigrations chat --name add_attachment_type_and_index)"
+      "Bash(venv\\\\Scripts\\\\python.exe manage.py makemigrations chat --name add_attachment_type_and_index)",
+      "Bash(Get-ChildItem -Path \"c:\\\\D-DRIVE\\\\Work\\\\company log app\" -Recurse -Depth 2)",
+      "Bash(Select-Object FullName, PSIsContainer)",
+      "Bash(Format-Table -AutoSize)",
+      "Bash(python manage.py migrate)",
+      "Bash(python -m venv --version)",
+      "Bash(where python *)",
+      "Bash(C:\\\\Users\\\\badhr\\\\AppData\\\\Local\\\\Python\\\\bin\\\\python.exe -c \"import django; print\\(django.__version__\\)\")",
+      "PowerShell(& \"C:\\\\Users\\\\badhr\\\\AppData\\\\Local\\\\Python\\\\bin\\\\python.exe\" -c \"import django; print\\(django.__version__\\)\" 2>&1)",
+      "PowerShell(& \"C:\\\\Users\\\\badhr\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python311\\\\python.exe\" -c \"import django; print\\(django.__version__\\)\" 2>&1)"
     ]
   }
 }

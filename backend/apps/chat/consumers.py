@@ -1,7 +1,10 @@
 import json
+from django.utils import timezone
+from django.db import models
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
 from .models import ChatBox, ChatBoxMember, Message
+from apps.accounts.models import User
 
 
 class ChatConsumer(AsyncWebsocketConsumer):
@@ -17,11 +20,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return
         await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
+        await self._set_presence(user.id, True)
         await self.channel_layer.group_send(self.group_name, {'type': 'presence', 'user_id': user.id, 'online': True})
 
     async def disconnect(self, close_code):
         user = self.scope.get('user')
         if user and not user.is_anonymous:
+            await self._set_presence(user.id, False)
             await self.channel_layer.group_send(self.group_name, {'type': 'presence', 'user_id': user.id, 'online': False})
         await self.channel_layer.group_discard(self.group_name, self.channel_name)
 
@@ -39,6 +44,11 @@ class ChatConsumer(AsyncWebsocketConsumer):
             message = await self._create_message(data)
             if message:
                 await self.channel_layer.group_send(self.group_name, {'type': 'message_event', 'message': message})
+        if event_type == 'delete':
+            message_id = data.get('message_id')
+            ok = await self._delete_for_everyone(message_id)
+            if ok:
+                await self.channel_layer.group_send(self.group_name, {'type': 'delete_event', 'message_id': message_id})
 
     async def message_event(self, event):
         await self.send(text_data=json.dumps({'type': 'message', 'payload': event['message']}))
@@ -51,6 +61,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     async def seen_event(self, event):
         await self.send(text_data=json.dumps({'type': 'seen', 'payload': event}))
+
+    async def delete_event(self, event):
+        await self.send(text_data=json.dumps({'type': 'delete', 'payload': {'message_id': event['message_id']}}))
 
     @database_sync_to_async
     def _can_access_chatbox(self, user_id: int) -> bool:
@@ -76,6 +89,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             message=data.get('message', ''),
             reply_to_id=data.get('reply_to') or None,
         )
+        ChatBoxMember.objects.filter(chatbox=chatbox).exclude(user=user).update(unread_count=models.F("unread_count") + 1)
         return {
             'id': msg.id,
             'client_id': data.get('client_id'),
@@ -93,9 +107,36 @@ class ChatConsumer(AsyncWebsocketConsumer):
         }
 
     @database_sync_to_async
+    def _delete_for_everyone(self, message_id) -> bool:
+        if not message_id:
+            return False
+        user = self.scope['user']
+        from django.utils import timezone
+        from datetime import timedelta
+        msg = Message.objects.filter(id=message_id, chatbox_id=self.chatbox_id).first()
+        if not msg:
+            return False
+        if user.role != 'owner' and msg.sender_id != user.id:
+            return False
+        if user.role != 'owner' and timezone.now() - msg.created_at > timedelta(hours=1):
+            return False
+        msg.deleted_for_everyone = True
+        msg.deleted_at = timezone.now()
+        msg.deleted_by = user
+        msg.message = ''
+        msg.attachment = None
+        msg.save(update_fields=['deleted_for_everyone', 'deleted_at', 'deleted_by', 'message', 'attachment'])
+        return True
+
+    @database_sync_to_async
     def _mark_seen(self, message_id):
         if not message_id:
             return
         msg = Message.objects.filter(id=message_id, chatbox_id=self.chatbox_id).first()
         if msg:
             msg.seen_by.add(self.scope['user'])
+            ChatBoxMember.objects.filter(chatbox_id=self.chatbox_id, user=self.scope["user"]).update(unread_count=0)
+
+    @database_sync_to_async
+    def _set_presence(self, user_id: int, online: bool):
+        User.objects.filter(id=user_id).update(is_online=online, last_seen_at=timezone.now())

@@ -1,6 +1,17 @@
 import { create } from 'zustand'
 import toast from 'react-hot-toast'
-import api from '../lib/api'
+import api, { API_BASE_URL } from '../lib/api'
+
+function resolveWsBase() {
+  if (import.meta.env.VITE_WS_URL) return import.meta.env.VITE_WS_URL
+  try {
+    const u = new URL(API_BASE_URL)
+    const proto = u.protocol === 'https:' ? 'wss:' : 'ws:'
+    return `${proto}//${u.host}`
+  } catch {
+    return 'ws://localhost:8000'
+  }
+}
 
 export const useChatStore = create((set, get) => ({
   chatboxes: [],
@@ -12,13 +23,17 @@ export const useChatStore = create((set, get) => ({
   page: 1,
   hasMore: true,
   uploadProgress: 0,
+  socketStatus: 'disconnected',
+  users: [],
   clearActiveChat: () => set({ activeChat: null, messages: [], page: 1, hasMore: true }),
   async fetchChatboxes(q = '') {
     const { data } = await api.get('/chatboxes/', { params: { search: q } })
     set({ chatboxes: data.results || data })
   },
   async createChatbox(payload) {
-    await api.post('/chatboxes/', payload)
+    await api.post('/chatboxes/', payload, {
+      headers: payload instanceof FormData ? { 'Content-Type': 'multipart/form-data' } : undefined
+    })
     await get().fetchChatboxes()
   },
   async setActiveChat(chat) {
@@ -40,9 +55,17 @@ export const useChatStore = create((set, get) => ({
   connectSocket(chatboxId) {
     const oldSocket = get().socket
     if (oldSocket) oldSocket.close()
-    const token = localStorage.getItem('access')
-    const wsUrl = (import.meta.env.VITE_WS_URL || 'ws://localhost:8000') + `/ws/chat/${chatboxId}/?token=${token}`
+    const token = sessionStorage.getItem('access')
+    const wsUrl = resolveWsBase() + `/ws/chat/${chatboxId}/?token=${token}`
     const socket = new WebSocket(wsUrl)
+    socket.onopen = () => set({ socketStatus: 'connected' })
+    socket.onclose = () => {
+      set({ socketStatus: 'disconnected' })
+      setTimeout(() => {
+        if (get().activeChat?.id === chatboxId) get().connectSocket(chatboxId)
+      }, 1500)
+    }
+    socket.onerror = () => set({ socketStatus: 'error' })
     socket.onmessage = (event) => {
       const packet = JSON.parse(event.data)
       if (packet.type === 'message') {
@@ -68,6 +91,16 @@ export const useChatStore = create((set, get) => ({
         const { message_id, user_id } = packet.payload
         set((s) => ({ messages: s.messages.map((m) => m.id === message_id ? { ...m, seen_by_ids: Array.from(new Set([...(m.seen_by_ids || []), user_id])) } : m) }))
       }
+      if (packet.type === 'delete') {
+        const { message_id } = packet.payload
+        set((s) => ({
+          messages: s.messages.map((m) =>
+            m.id === message_id
+              ? { ...m, deleted_for_everyone: true, display_message: 'This message was deleted', message: '', attachment: null, attachment_url: null }
+              : m
+          ),
+        }))
+      }
     }
     set({ socket })
   },
@@ -79,7 +112,7 @@ export const useChatStore = create((set, get) => ({
     const socket = get().socket
     const active = get().activeChat
     if (!active) return
-    const user = JSON.parse(localStorage.getItem('user') || 'null')
+    const user = JSON.parse(sessionStorage.getItem('user') || 'null')
     const clientId = `tmp-${Date.now()}`
     const optimistic = {
       id: clientId,
@@ -121,19 +154,76 @@ export const useChatStore = create((set, get) => ({
   async sendFile(file, message = '') {
     const active = get().activeChat
     if (!active) return
+    const user = JSON.parse(sessionStorage.getItem('user') || 'null')
+    const clientId = `file-${Date.now()}`
+    const localUrl = URL.createObjectURL(file)
+    const guessedType = file.type.startsWith('image/')
+      ? 'image'
+      : file.type.startsWith('video/')
+        ? 'video'
+        : file.type.startsWith('audio/')
+          ? 'other'
+          : 'document'
+    const optimistic = {
+      id: clientId,
+      client_id: clientId,
+      chatbox: active.id,
+      sender: user?.id,
+      sender_name: user?.name,
+      message: message || '',
+      attachment_url: localUrl,
+      attachment_type: guessedType,
+      created_at: new Date().toISOString(),
+      optimistic: true,
+      seen_by_ids: [],
+    }
+    set((s) => ({ messages: [...s.messages, optimistic] }))
+
     const formData = new FormData()
     formData.append('chatbox', active.id)
     formData.append('message', message)
     formData.append('attachment', file)
-    const { data } = await api.post('/messages/', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-      onUploadProgress: (e) => {
-        const value = e.total ? Math.round((e.loaded * 100) / e.total) : 0
-        set({ uploadProgress: value })
-      }
+    try {
+      const { data } = await api.post('/messages/', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (e) => {
+          const value = e.total ? Math.round((e.loaded * 100) / e.total) : 0
+          set({ uploadProgress: value })
+        }
+      })
+      set((s) => ({
+        messages: s.messages.map((m) => (m.client_id === clientId ? data : m)),
+        uploadProgress: 0
+      }))
+      toast.success('File uploaded')
+    } catch (e) {
+      set((s) => ({ messages: s.messages.filter((m) => m.client_id !== clientId), uploadProgress: 0 }))
+      toast.error(e?.response?.data?.detail || 'File upload failed')
+    }
+  },
+  async updateGroupSettings(chatboxId, payload) {
+    await api.patch(`/chatboxes/${chatboxId}/`, payload, {
+      headers: payload instanceof FormData ? { 'Content-Type': 'multipart/form-data' } : undefined
     })
-    set((s) => ({ messages: [...s.messages, data], uploadProgress: 0 }))
-    toast.success('File uploaded')
+    await get().fetchChatboxes()
+  },
+  async searchUsers(query = '') {
+    const { data } = await api.get('/users/', { params: { search: query, page_size: 20 } })
+    set({ users: data.results || data })
+  },
+  async addMember(chatboxId, userId, canChat = true) {
+    const { data } = await api.post(`/chatboxes/${chatboxId}/add_member/`, { user: userId, can_chat: canChat })
+    return data
+  },
+  async promoteAdmin(chatboxId, memberId) {
+    await api.post(`/chatboxes/${chatboxId}/promote_admin/`, { member_id: memberId })
+  },
+  async demoteAdmin(chatboxId, memberId) {
+    await api.post(`/chatboxes/${chatboxId}/demote_admin/`, { member_id: memberId })
+  },
+  async transferOwnership(chatboxId, memberId) {
+    await api.post(`/chatboxes/${chatboxId}/transfer_ownership/`, { member_id: memberId })
+    await get().fetchChatboxes()
   },
   async toggleTick(messageId) {
     const { data } = await api.post(`/messages/${messageId}/toggle_tick/`)
@@ -146,7 +236,22 @@ export const useChatStore = create((set, get) => ({
   async deleteMessage(messageId, scope = 'everyone') {
     try {
       await api.delete(`/messages/${messageId}/?scope=${scope}`)
-      set((s) => ({ messages: s.messages.filter((m) => m.id !== messageId) }))
+      if (scope === 'everyone') {
+        // Keep visible but mark deleted so "This message was deleted" shows to everyone
+        set((s) => ({
+          messages: s.messages.map((m) =>
+            m.id === messageId
+              ? { ...m, deleted_for_everyone: true, display_message: 'This message was deleted', message: '', attachment: null, attachment_url: null }
+              : m
+          ),
+        }))
+        // Broadcast to other members via WebSocket
+        const socket = get().socket
+        if (socket?.readyState === 1) socket.send(JSON.stringify({ type: 'delete', message_id: messageId }))
+      } else {
+        // "Delete for me" — remove only from the current user's local view
+        set((s) => ({ messages: s.messages.filter((m) => m.id !== messageId) }))
+      }
     } catch (e) {
       toast.error(e?.response?.data?.detail || 'Unable to delete this message')
     }
@@ -163,5 +268,13 @@ export const useChatStore = create((set, get) => ({
     const socket = get().socket
     await api.post(`/messages/${messageId}/seen/`)
     if (socket?.readyState === 1) socket.send(JSON.stringify({ type: 'seen', message_id: messageId }))
-  }
+  },
+  async startDirectMessage(userId) {
+    const { data } = await api.post('/chatboxes/direct_message/', { user_id: userId })
+    const existing = get().chatboxes.find((c) => c.id === data.id)
+    if (!existing) {
+      set((s) => ({ chatboxes: [data, ...s.chatboxes] }))
+    }
+    await get().setActiveChat(data)
+  },
 }))

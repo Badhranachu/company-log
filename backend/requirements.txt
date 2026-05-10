@@ -4,8 +4,9 @@ djangorestframework-simplejwt==5.4.0
 django-cors-headers==4.6.0
 django-filter==24.3
 channels==4.2.0
+daphne==4.1.2
 channels-redis==4.2.1
 PyMySQL==1.1.1
 uvicorn==0.34.0
 python-dotenv==1.0.1
-cryptography
+Pillow==12.2.0

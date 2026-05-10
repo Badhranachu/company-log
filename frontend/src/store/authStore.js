@@ -2,22 +2,24 @@ import { create } from 'zustand'
 import api from '../lib/api'
 
 export const useAuthStore = create((set) => ({
-  user: JSON.parse(localStorage.getItem('user') || 'null'),
+  user: JSON.parse(sessionStorage.getItem('user') || 'null'),
   loading: false,
   async login(email, password) {
     set({ loading: true })
     const { data } = await api.post('/auth/login/', { email, password })
-    localStorage.setItem('access', data.access)
-    localStorage.setItem('refresh', data.refresh)
-    localStorage.setItem('user', JSON.stringify(data.user))
+    sessionStorage.setItem('access', data.access)
+    sessionStorage.setItem('refresh', data.refresh)
+    sessionStorage.setItem('user', JSON.stringify(data.user))
     set({ user: data.user, loading: false })
   },
   logout() {
-    localStorage.clear()
+    sessionStorage.removeItem('access')
+    sessionStorage.removeItem('refresh')
+    sessionStorage.removeItem('user')
     set({ user: null })
   },
   setUser(user) {
-    localStorage.setItem('user', JSON.stringify(user))
+    sessionStorage.setItem('user', JSON.stringify(user))
     set({ user })
   },
 }))

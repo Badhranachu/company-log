@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { FiPaperclip, FiSend } from 'react-icons/fi'
+import { FiMic, FiPlus, FiSend, FiSettings, FiTrash2 } from 'react-icons/fi'
 import { motion } from 'framer-motion'
 import { useAuthStore } from '../../store/authStore'
 import { useChatStore } from '../../store/chatStore'
 import MessageBubble from './MessageBubble'
+import AttachmentMenu from './AttachmentMenu'
+import GroupSettingsModal from './GroupSettingsModal'
+import GroupDetailsModal from './GroupDetailsModal'
+import PollModal from './PollModal'
 
 export default function ChatWindow() {
   const user = useAuthStore((s) => s.user)
@@ -21,6 +25,19 @@ export default function ChatWindow() {
 
   const [text, setText] = useState('')
   const [replyTo, setReplyTo] = useState(null)
+  const [attachMenuOpen, setAttachMenuOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [detailsOpen, setDetailsOpen] = useState(false)
+  const [pollOpen, setPollOpen] = useState(false)
+  const [recording, setRecording] = useState(false)
+  const [recordSecs, setRecordSecs] = useState(0)
+  const [waveBars, setWaveBars] = useState(Array.from({ length: 24 }, () => 6))
+  const recorderRef = useRef(null)
+  const chunksRef = useRef([])
+  const timerRef = useRef(null)
+  const audioCtxRef = useRef(null)
+  const analyserRef = useRef(null)
+  const rafRef = useRef(null)
   const listRef = useRef(null)
 
   useEffect(() => {
@@ -30,6 +47,9 @@ export default function ChatWindow() {
   }, [messages, activeChat, markSeen])
 
   if (!activeChat) return <div className="flex-1 grid place-items-center text-slate-500">Select a chat box to start</div>
+  const canManageGroup = user?.role === 'owner' || activeChat.created_by === user?.id
+  const memberCount = activeChat.member_count || 0
+  const avatarSrc = activeChat.group_avatar_url || `https://placehold.co/40x40/4ade80/ffffff?text=${encodeURIComponent((activeChat.title || 'G').slice(0, 1).toUpperCase())}`
 
   const submit = (e) => {
     e.preventDefault()
@@ -45,6 +65,79 @@ export default function ChatWindow() {
     await sendFile(file, text)
     setText('')
   }
+  const onPickAttachment = async (file) => {
+    setAttachMenuOpen(false)
+    await sendFile(file, text)
+    setText('')
+  }
+  const onMenuAction = (action) => {
+    if (action === 'poll') {
+      setAttachMenuOpen(false)
+      setPollOpen(true)
+    }
+  }
+  const sendPoll = ({ question, options }) => {
+    const payload = `📊 Poll: ${question}\n${options.map((o, i) => `${i + 1}. ${o}`).join('\n')}`
+    sendMessage(payload)
+  }
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+      const source = audioCtx.createMediaStreamSource(stream)
+      const analyser = audioCtx.createAnalyser()
+      analyser.fftSize = 64
+      source.connect(analyser)
+      audioCtxRef.current = audioCtx
+      analyserRef.current = analyser
+      const recorder = new MediaRecorder(stream)
+      recorderRef.current = recorder
+      chunksRef.current = []
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data) }
+      recorder.onstop = async () => {
+        const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
+        const file = new File([blob], `voice-${Date.now()}.webm`, { type: 'audio/webm' })
+        await sendFile(file, '')
+        stream.getTracks().forEach((t) => t.stop())
+      }
+      recorder.start()
+      setRecording(true)
+      setRecordSecs(0)
+      timerRef.current = setInterval(() => setRecordSecs((s) => s + 1), 1000)
+      const data = new Uint8Array(analyser.frequencyBinCount)
+      const tick = () => {
+        analyser.getByteFrequencyData(data)
+        const slice = Math.floor(data.length / 24) || 1
+        const bars = Array.from({ length: 24 }, (_, i) => {
+          const seg = data.slice(i * slice, (i + 1) * slice)
+          const avg = seg.reduce((a, b) => a + b, 0) / (seg.length || 1)
+          return Math.max(4, Math.min(26, Math.round(avg / 8)))
+        })
+        setWaveBars(bars)
+        rafRef.current = requestAnimationFrame(tick)
+      }
+      tick()
+    } catch {
+      // no mic permission
+    }
+  }
+  const stopRecording = async (send = true) => {
+    if (!recorderRef.current) return
+    clearInterval(timerRef.current)
+    cancelAnimationFrame(rafRef.current)
+    rafRef.current = null
+    setWaveBars(Array.from({ length: 24 }, () => 6))
+    if (audioCtxRef.current) {
+      await audioCtxRef.current.close()
+      audioCtxRef.current = null
+    }
+    analyserRef.current = null
+    setRecording(false)
+    if (send) recorderRef.current.stop()
+    else {
+      recorderRef.current.stream.getTracks().forEach((t) => t.stop())
+    }
+  }
 
   const onScroll = () => {
     if (!listRef.current || !hasMore) return
@@ -52,21 +145,72 @@ export default function ChatWindow() {
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-[url('https://www.transparenttextures.com/patterns/soft-circle-scales.png')]">
+    <div className="flex-1 flex flex-col bg-[radial-gradient(circle_at_top_left,rgba(34,197,94,0.1),transparent_35%),url('https://www.transparenttextures.com/patterns/soft-circle-scales.png')]">
+      {/* Chat header */}
+      <div className="h-14 px-4 border-b border-white/40 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl flex items-center justify-between">
+        <button
+          onClick={() => setDetailsOpen(true)}
+          className="flex items-center gap-3 hover:opacity-80 transition min-w-0"
+        >
+          <img
+            src={avatarSrc}
+            alt={activeChat.title}
+            className="w-9 h-9 rounded-full object-cover border border-white/40 shrink-0"
+          />
+          <div className="text-left min-w-0">
+            <p className="font-semibold truncate">{activeChat.title}</p>
+            <p className="text-[11px] opacity-50">
+              {activeChat.chat_type === 'direct' ? 'Direct Message' : `${memberCount} member${memberCount !== 1 ? 's' : ''}`}
+            </p>
+          </div>
+        </button>
+        <button onClick={() => setSettingsOpen(true)} className="p-2 rounded-full hover:bg-white/60 shrink-0"><FiSettings /></button>
+      </div>
+
       <div ref={listRef} onScroll={onScroll} className="flex-1 overflow-y-auto p-4 space-y-2">
         {hasMore && <p className="text-xs text-center opacity-60">Scroll up to load older messages</p>}
-        {messages.map((msg) => <MessageBubble key={msg.id} msg={msg} mine={msg.sender === user?.id} onReply={() => setReplyTo(msg.id)} />)}
+        {messages.map((msg) => (
+          <MessageBubble
+            key={msg.id}
+            msg={msg}
+            mine={msg.sender === user?.id}
+            userId={user?.id}
+            memberCount={memberCount}
+            isGroup={activeChat.chat_type !== 'direct'}
+            onReply={() => setReplyTo(msg.id)}
+          />
+        ))}
       </div>
       <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="px-4 py-2">
         {typingUsers.length > 0 && <p className="text-xs mb-1 text-wa-700">Someone is typing...</p>}
         {replyTo && <p className="text-xs mb-1">Replying to message #{replyTo} <button className="underline" onClick={() => setReplyTo(null)}>cancel</button></p>}
         {uploadProgress > 0 && <div className="h-1 bg-slate-200 rounded-full mb-2"><div className="h-1 bg-wa-600 rounded-full" style={{ width: `${uploadProgress}%` }} /></div>}
-        <form onSubmit={submit} className="bg-white dark:bg-slate-900 rounded-2xl p-2 shadow-glass flex items-center gap-2">
-          <label className="p-2 cursor-pointer"><FiPaperclip /><input type="file" className="hidden" onChange={onFile} /></label>
+        <form onSubmit={submit} className="bg-white/90 dark:bg-slate-900 rounded-2xl p-2 shadow-glass flex items-center gap-2 relative">
+          <button type="button" onClick={() => setAttachMenuOpen((v) => !v)} className="p-2 rounded-full bg-wa-600 text-white"><FiPlus /></button>
+          <AttachmentMenu open={attachMenuOpen} onPick={onPickAttachment} onAction={onMenuAction} />
+          <label className="hidden"><input type="file" className="hidden" onChange={onFile} /></label>
           <input value={text} onChange={(e) => { setText(e.target.value); sendTyping() }} className="flex-1 px-3 py-2 bg-transparent outline-none" placeholder="Type a message" />
-          <button className="p-2 rounded-full bg-wa-600 text-white"><FiSend /></button>
+          {recording ? (
+            <>
+              <div className="flex items-center gap-0.5 px-2">
+                {waveBars.map((h, i) => (
+                  <span key={i} className="w-1 rounded-full bg-slate-500 dark:bg-slate-300" style={{ height: `${h}px` }} />
+                ))}
+              </div>
+              <span className="text-xs text-rose-500">{String(Math.floor(recordSecs / 60)).padStart(2, '0')}:{String(recordSecs % 60).padStart(2, '0')}</span>
+              <button type="button" onClick={() => stopRecording(false)} className="p-2 rounded-full bg-slate-200 text-slate-700"><FiTrash2 /></button>
+              <button type="button" onClick={() => stopRecording(true)} className="p-2 rounded-full bg-wa-600 text-white"><FiSend /></button>
+            </>
+          ) : text.trim() ? (
+            <button className="p-2 rounded-full bg-wa-600 text-white"><FiSend /></button>
+          ) : (
+            <button type="button" onClick={startRecording} className="p-2 rounded-full bg-wa-600 text-white"><FiMic /></button>
+          )}
         </form>
       </motion.div>
+      <GroupSettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} chat={activeChat} canManage={canManageGroup} />
+      <GroupDetailsModal open={detailsOpen} onClose={() => setDetailsOpen(false)} chat={activeChat} />
+      <PollModal open={pollOpen} onClose={() => setPollOpen(false)} onSubmit={sendPoll} />
     </div>
   )
 }

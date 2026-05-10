@@ -1,11 +1,13 @@
 import axios from 'axios'
 
+export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
+  baseURL: API_BASE_URL
 })
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('access')
+  const token = sessionStorage.getItem('access')
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })
@@ -14,9 +16,9 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('access')
-      localStorage.removeItem('refresh')
-      localStorage.removeItem('user')
+      sessionStorage.removeItem('access')
+      sessionStorage.removeItem('refresh')
+      sessionStorage.removeItem('user')
       window.location.href = '/login'
     }
     return Promise.reject(error)

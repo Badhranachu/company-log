@@ -1,6 +1,7 @@
 from django.contrib.auth.models import AbstractUser
 from django.contrib.auth.models import BaseUserManager
 from django.db import models
+from django.utils import timezone
 
 
 class UserManager(BaseUserManager):
@@ -40,6 +41,17 @@ class User(AbstractUser):
     email = models.EmailField(unique=True)
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default=ROLE_USER)
     name = models.CharField(max_length=255)
+    username_alias = models.CharField(max_length=80, blank=True, default="")
+    phone_number = models.CharField(max_length=30, blank=True, default="")
+    bio = models.TextField(blank=True, default="")
+    status_message = models.CharField(max_length=160, blank=True, default="")
+    department = models.CharField(max_length=120, blank=True, default="")
+    profile_picture = models.ImageField(upload_to="profiles/avatar/", null=True, blank=True)
+    banner_image = models.ImageField(upload_to="profiles/banner/", null=True, blank=True)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+    is_online = models.BooleanField(default=False)
+    is_banned = models.BooleanField(default=False)
+    suspended_until = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     USERNAME_FIELD = 'email'
@@ -48,3 +60,7 @@ class User(AbstractUser):
 
     def __str__(self):
         return f'{self.name} ({self.email})'
+
+    @property
+    def is_suspended(self):
+        return bool(self.suspended_until and self.suspended_until > timezone.now())

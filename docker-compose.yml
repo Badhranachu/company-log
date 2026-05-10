@@ -33,7 +33,7 @@ services:
     restart: unless-stopped
 
     env_file:
-      - ./backend/.env
+      - ./backend/.env.example
 
     volumes:
       - ./backend:/app
@@ -55,8 +55,8 @@ services:
       context: ./frontend
 
       args:
-        VITE_API_URL: https://companylog.nexston.in/api/v1
-        VITE_WS_URL: wss://companylog.nexston.in/ws
+        VITE_API_URL: http://localhost:6060/api/v1
+        VITE_WS_URL: ws://localhost:6060
 
     restart: unless-stopped
 
