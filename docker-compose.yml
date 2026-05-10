@@ -1,8 +1,7 @@
-version: "3.9"
-
 services:
   db:
     image: mysql:8.4
+    restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: rootpass
       MYSQL_DATABASE: companylog
@@ -12,31 +11,42 @@ services:
       - "3307:3306"
     volumes:
       - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-prootpass"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   redis:
     image: redis:7
+    restart: unless-stopped
     ports:
       - "6379:6379"
 
   backend:
     build: ./backend
+    restart: unless-stopped
     env_file:
-      - ./backend/.env.example
+      - ./backend/.env
     volumes:
       - ./backend:/app
       - media_data:/app/media
+      - static_data:/app/staticfiles
     ports:
       - "6060:5000"
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
 
   frontend:
     build:
       context: ./frontend
       args:
         VITE_API_URL: http://76.13.241.37:6060/api/v1
-        VITE_WS_URL: ws://76.13.241.37:6060
+        VITE_WS_URL: ws://76.13.241.37:6060/ws
+    restart: unless-stopped
     ports:
       - "5055:80"
     depends_on:
@@ -45,3 +55,4 @@ services:
 volumes:
   mysql_data:
   media_data:
+  static_data:
