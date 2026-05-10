@@ -1,9 +1,56 @@
+# Python
 __pycache__/
-*.pyc
-node_modules/
-dist/
-.env
+*.py[cod]
+*.pyo
+*.egg-info/
+.eggs/
+
+# Virtual environments
 .venv/
 venv/
+env/
 backend/venv/
-media/
+
+# Django
+*.sqlite3
+backend/staticfiles/
+backend/media/
+backend/db.sqlite3
+
+# Environment variables — NEVER commit secrets
+.env
+.env.*
+!.env.example
+
+# Node / Frontend
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+.pnp
+.pnp.js
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# Build artifacts
+*.pyc
+*.pyd
+*.so
+build/
