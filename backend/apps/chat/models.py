@@ -88,6 +88,7 @@ class Message(models.Model):
         on_delete=models.SET_NULL,
         related_name="deleted_messages",
     )
+    is_system = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     seen_by = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name='seen_messages', blank=True)
     hidden_by = models.ManyToManyField(settings.AUTH_USER_MODEL, related_name='hidden_messages', blank=True)

@@ -58,9 +58,33 @@ class ChatBoxViewSet(viewsets.ModelViewSet):
             user=target_user,
             defaults={'can_chat': request.data.get('can_chat', True)},
         )
+        if created:
+            _post_system_message(chatbox, f"{target_user.name} was added to the group")
         serializer = ChatBoxMemberSerializer(member)
         http_status = status.HTTP_201_CREATED if created else status.HTTP_200_OK
         return response.Response({**serializer.data, 'already_member': not created}, status=http_status)
+
+    @decorators.action(detail=True, methods=['post'])
+    def remove_member(self, request, pk=None):
+        chatbox = self.get_object()
+        user_id = request.data.get('user_id')
+        if not user_id:
+            return response.Response({'detail': 'user_id required'}, status=status.HTTP_400_BAD_REQUEST)
+        requester = request.user
+        # Owner (app-level) or group creator/admin can remove members
+        requester_membership = ChatBoxMember.objects.filter(chatbox=chatbox, user=requester).first()
+        is_group_admin = requester.role == 'owner' or chatbox.created_by_id == requester.id or (requester_membership and requester_membership.is_admin)
+        if not is_group_admin:
+            return response.Response({'detail': 'Not allowed'}, status=status.HTTP_403_FORBIDDEN)
+        target = ChatBoxMember.objects.filter(chatbox=chatbox, user_id=user_id).first()
+        if not target:
+            return response.Response({'detail': 'Member not found'}, status=status.HTTP_404_NOT_FOUND)
+        if target.user_id == chatbox.created_by_id:
+            return response.Response({'detail': 'Cannot remove the group owner'}, status=status.HTTP_400_BAD_REQUEST)
+        removed_name = target.user.name
+        target.delete()
+        _post_system_message(chatbox, f"{removed_name} was removed from the group")
+        return response.Response({'detail': 'Member removed'})
 
     @decorators.action(detail=True, methods=['post'])
     def promote_admin(self, request, pk=None):
@@ -118,6 +142,16 @@ class ChatBoxViewSet(viewsets.ModelViewSet):
         chatbox.is_starred = not chatbox.is_starred
         chatbox.save(update_fields=['is_starred', 'updated_at'])
         return response.Response({'is_starred': chatbox.is_starred})
+
+    @decorators.action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
+    def pin_chat(self, request, pk=None):
+        chatbox = self.get_object()
+        member = ChatBoxMember.objects.filter(chatbox=chatbox, user=request.user).first()
+        if not member:
+            return response.Response({'detail': 'Not a member'}, status=status.HTTP_403_FORBIDDEN)
+        member.is_pinned = not member.is_pinned
+        member.save(update_fields=['is_pinned'])
+        return response.Response({'is_pinned': member.is_pinned})
 
     @decorators.action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def direct_message(self, request):
@@ -252,6 +286,12 @@ class MessageViewSet(viewsets.ModelViewSet):
         message = self.get_object()
         message.seen_by.add(request.user)
         return response.Response({'detail': 'Seen updated'})
+
+
+def _post_system_message(chatbox, text: str):
+    """Create a system-event message (no sender) and return its serialized form."""
+    msg = Message.objects.create(chatbox=chatbox, sender=chatbox.created_by, message=text, is_system=True)
+    return msg
 
 
 def _infer_attachment_type(filename: str) -> str:

@@ -39,6 +39,16 @@ function DeliveryTicks({ msg, mine, userId, memberCount, isGroup }) {
   )
 }
 
+export function SystemBanner({ text }) {
+  return (
+    <div className="flex justify-center my-1">
+      <span className="text-[11px] px-3 py-1 rounded-full bg-black/10 dark:bg-white/10 text-slate-600 dark:text-slate-300">
+        {text}
+      </span>
+    </div>
+  )
+}
+
 export default function MessageBubble({ msg, mine, userId, memberCount, isGroup, onReply }) {
   const [deleteOpen, setDeleteOpen] = useState(false)
   const toggleTick = useChatStore((s) => s.toggleTick)

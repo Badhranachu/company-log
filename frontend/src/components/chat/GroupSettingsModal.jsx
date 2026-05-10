@@ -1,15 +1,100 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import toast from 'react-hot-toast'
 import { useChatStore } from '../../store/chatStore'
+import { useAuthStore } from '../../store/authStore'
 import api from '../../lib/api'
-import { FiArrowLeft, FiX, FiUserCheck } from 'react-icons/fi'
+import { FiArrowLeft, FiX, FiUserCheck, FiMoreVertical, FiShield, FiShieldOff, FiUserMinus } from 'react-icons/fi'
+
+function MemberMenu({ member, chatOwnerId, currentUserId, currentUserRole, currentMembership, chatId, onRefresh }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef(null)
+
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const isCurrentUser = member.id === currentUserId
+  const isGroupOwner = member.id === chatOwnerId
+  const isAdmin = !!member.is_admin
+  const canManage = currentUserRole === 'owner' || currentUserId === chatOwnerId || (currentMembership?.is_admin && !isGroupOwner)
+
+  if (!canManage || isCurrentUser) return null
+
+  const promote = async () => {
+    setOpen(false)
+    try {
+      await api.post(`/chatboxes/${chatId}/promote_admin/`, { member_id: member.id })
+      toast.success(`${member.name} promoted to admin`)
+      onRefresh()
+    } catch (e) { toast.error(e?.response?.data?.detail || 'Failed') }
+  }
+  const demote = async () => {
+    setOpen(false)
+    try {
+      await api.post(`/chatboxes/${chatId}/demote_admin/`, { member_id: member.id })
+      toast.success(`${member.name} removed as admin`)
+      onRefresh()
+    } catch (e) { toast.error(e?.response?.data?.detail || 'Failed') }
+  }
+  const remove = async () => {
+    setOpen(false)
+    if (!window.confirm(`Remove ${member.name} from the group?`)) return
+    try {
+      await api.post(`/chatboxes/${chatId}/remove_member/`, { user_id: member.id })
+      toast.success(`${member.name} removed`)
+      onRefresh()
+    } catch (e) { toast.error(e?.response?.data?.detail || 'Failed') }
+  }
+
+  return (
+    <div ref={ref} className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700"
+      >
+        <FiMoreVertical size={15} />
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: -4 }}
+            className="absolute right-0 top-8 z-50 w-44 rounded-xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 shadow-xl overflow-hidden"
+          >
+            {!isAdmin && (
+              <button type="button" onClick={promote} className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700">
+                <FiShield size={13} className="text-wa-600" /> Promote to admin
+              </button>
+            )}
+            {isAdmin && !isGroupOwner && (
+              <button type="button" onClick={demote} className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700">
+                <FiShieldOff size={13} className="text-amber-500" /> Remove as admin
+              </button>
+            )}
+            {!isGroupOwner && (
+              <button type="button" onClick={remove} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20">
+                <FiUserMinus size={13} /> Remove from group
+              </button>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
 
 export default function GroupSettingsModal({ open, onClose, chat, canManage }) {
+  const currentUser = useAuthStore((s) => s.user)
   const updateGroupSettings = useChatStore((s) => s.updateGroupSettings)
   const searchUsers = useChatStore((s) => s.searchUsers)
   const addMember = useChatStore((s) => s.addMember)
   const users = useChatStore((s) => s.users)
+
   const [form, setForm] = useState(() => ({
     title: chat?.title || '',
     description: chat?.description || '',
@@ -29,6 +114,15 @@ export default function GroupSettingsModal({ open, onClose, chat, canManage }) {
   const [images, setImages] = useState([])
   const [files, setFiles] = useState([])
   const [links, setLinks] = useState([])
+  const [members, setMembers] = useState([])
+
+  const loadMembers = async () => {
+    if (!chat) return
+    try {
+      const { data } = await api.get(`/chatboxes/${chat.id}/members/`)
+      setMembers(data)
+    } catch { /* ignore */ }
+  }
 
   useEffect(() => {
     if (!chat) return
@@ -47,13 +141,12 @@ export default function GroupSettingsModal({ open, onClose, chat, canManage }) {
   }, [chat])
 
   useEffect(() => {
+    if (!open || !chat) return
+    loadMembers()
     const loadMedia = async () => {
-      if (!open || !chat) return
       const { data } = await api.get('/messages/', { params: { chatbox: chat.id, page_size: 300 } })
       const rows = data.results || data
-      const img = []
-      const fil = []
-      const lnk = []
+      const img = [], fil = [], lnk = []
       const linkRegex = /(https?:\/\/[^\s]+)/g
       rows.forEach((m) => {
         if (m.attachment_url) {
@@ -63,28 +156,28 @@ export default function GroupSettingsModal({ open, onClose, chat, canManage }) {
         const found = (m.display_message || m.message || '').match(linkRegex) || []
         found.forEach((url) => lnk.push({ id: `${m.id}-${url}`, url }))
       })
-      setImages(img)
-      setFiles(fil)
-      setLinks(lnk)
+      setImages(img); setFiles(fil); setLinks(lnk)
     }
     loadMedia()
   }, [open, chat])
 
   if (!open || !chat) return null
 
+  const currentMembership = members.find((m) => m.id === currentUser?.id)
+
   const save = async (e) => {
     e.preventDefault()
     const fd = new FormData()
-    Object.entries(form).forEach(([k, v]) => {
-      if (v !== null && v !== undefined) fd.append(k, v)
-    })
+    Object.entries(form).forEach(([k, v]) => { if (v !== null && v !== undefined) fd.append(k, v) })
     await updateGroupSettings(chat.id, fd)
     onClose()
   }
+
   const doSearch = async (q) => {
     setUserQuery(q)
     if (q.trim()) await searchUsers(q)
   }
+
   const doAddMember = async (uid) => {
     setAddingId(uid)
     try {
@@ -94,13 +187,19 @@ export default function GroupSettingsModal({ open, onClose, chat, canManage }) {
       } else {
         toast.success('Member added successfully')
         setAddedIds((prev) => [...prev, uid])
+        loadMembers()
       }
     } catch (err) {
-      const msg = err?.response?.data?.detail || 'Failed to add member'
-      toast.error(msg)
+      toast.error(err?.response?.data?.detail || 'Failed to add member')
     } finally {
       setAddingId(null)
     }
+  }
+
+  const roleBadge = (m) => {
+    if (m.id === chat.created_by) return <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-semibold">Owner</span>
+    if (m.is_admin) return <span className="text-[9px] px-1.5 py-0.5 rounded bg-wa-100 text-wa-700 font-semibold">Admin</span>
+    return null
   }
 
   return (
@@ -120,52 +219,26 @@ export default function GroupSettingsModal({ open, onClose, chat, canManage }) {
           <div className="grid grid-cols-2 gap-2">
             <label className="text-xs rounded-xl border px-3 py-2 cursor-pointer">
               Group image
-              <input
-                type="file"
-                className="hidden"
-                accept="image/*"
-                onChange={(e) => {
-                  const file = e.target.files?.[0] || null
-                  setForm({ ...form, group_avatar: file })
-                  setAvatarPreview(file ? URL.createObjectURL(file) : (chat?.group_avatar_url || ''))
-                }}
-                disabled={!canManage}
-              />
+              <input type="file" className="hidden" accept="image/*" disabled={!canManage}
+                onChange={(e) => { const f = e.target.files?.[0] || null; setForm({ ...form, group_avatar: f }); setAvatarPreview(f ? URL.createObjectURL(f) : (chat?.group_avatar_url || '')) }} />
             </label>
             <label className="text-xs rounded-xl border px-3 py-2 cursor-pointer">
               Group banner
-              <input
-                type="file"
-                className="hidden"
-                accept="image/*"
-                onChange={(e) => {
-                  const file = e.target.files?.[0] || null
-                  setForm({ ...form, group_banner: file })
-                  setBannerPreview(file ? URL.createObjectURL(file) : (chat?.group_banner_url || ''))
-                }}
-                disabled={!canManage}
-              />
+              <input type="file" className="hidden" accept="image/*" disabled={!canManage}
+                onChange={(e) => { const f = e.target.files?.[0] || null; setForm({ ...form, group_banner: f }); setBannerPreview(f ? URL.createObjectURL(f) : (chat?.group_banner_url || '')) }} />
             </label>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div className="rounded-xl border p-2">
               <p className="text-[11px] opacity-70 mb-1">Image preview</p>
               <div className="h-20 flex items-center">
-                {avatarPreview ? (
-                  <img src={avatarPreview} alt="Group avatar preview" className="w-16 h-16 rounded-full object-cover border" />
-                ) : (
-                  <span className="text-xs opacity-60">No image selected</span>
-                )}
+                {avatarPreview ? <img src={avatarPreview} alt="avatar" className="w-16 h-16 rounded-full object-cover border" /> : <span className="text-xs opacity-60">No image</span>}
               </div>
             </div>
             <div className="rounded-xl border p-2">
               <p className="text-[11px] opacity-70 mb-1">Banner preview</p>
               <div className="h-20">
-                {bannerPreview ? (
-                  <img src={bannerPreview} alt="Group banner preview" className="w-full h-20 rounded-lg object-cover border" />
-                ) : (
-                  <span className="text-xs opacity-60">No banner selected</span>
-                )}
+                {bannerPreview ? <img src={bannerPreview} alt="banner" className="w-full h-20 rounded-lg object-cover border" /> : <span className="text-xs opacity-60">No banner</span>}
               </div>
             </div>
           </div>
@@ -179,19 +252,46 @@ export default function GroupSettingsModal({ open, onClose, chat, canManage }) {
             <label><input type="checkbox" checked={form.can_members_edit_description} onChange={(e) => setForm({ ...form, can_members_edit_description: e.target.checked })} disabled={!canManage} /> Edit description</label>
             <label><input type="checkbox" checked={form.can_members_edit_media} onChange={(e) => setForm({ ...form, can_members_edit_media: e.target.checked })} disabled={!canManage} /> Edit media</label>
           </div>
+
+          {/* Members list with 3-dot menu */}
+          <div className="rounded-xl border p-3 space-y-2">
+            <p className="text-sm font-medium">{members.length} Member{members.length !== 1 ? 's' : ''}</p>
+            <div className="max-h-44 overflow-auto space-y-1">
+              {members.map((m) => (
+                <div key={m.id} className="flex items-center gap-2 px-2 py-1.5 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800 transition">
+                  <img
+                    src={m.profile_picture || `https://placehold.co/32x32/4ade80/ffffff?text=${encodeURIComponent((m.name || '?').slice(0, 1).toUpperCase())}`}
+                    alt={m.name}
+                    className="w-8 h-8 rounded-full object-cover border shrink-0"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-sm font-medium truncate">{m.name}</p>
+                      {roleBadge(m)}
+                    </div>
+                    <p className="text-xs opacity-60 truncate">{m.email}</p>
+                  </div>
+                  <MemberMenu
+                    member={m}
+                    chatOwnerId={chat.created_by}
+                    currentUserId={currentUser?.id}
+                    currentUserRole={currentUser?.role}
+                    currentMembership={currentMembership}
+                    chatId={chat.id}
+                    onRefresh={loadMembers}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Add users (admin/owner only) */}
           {canManage && (
             <div className="rounded-xl border p-3 space-y-2">
               <p className="text-sm font-medium">Add users to group</p>
-              <input
-                value={userQuery}
-                onChange={(e) => doSearch(e.target.value)}
-                className="w-full rounded-lg border px-3 py-2 bg-transparent text-sm"
-                placeholder="Search by name, email or phone number"
-              />
+              <input value={userQuery} onChange={(e) => doSearch(e.target.value)} className="w-full rounded-lg border px-3 py-2 bg-transparent text-sm" placeholder="Search by name, email or phone number" />
               <div className="max-h-36 overflow-auto space-y-1">
-                {users.length === 0 && userQuery && (
-                  <p className="text-xs opacity-60 py-2 text-center">No users found</p>
-                )}
+                {users.length === 0 && userQuery && <p className="text-xs opacity-60 py-2 text-center">No users found</p>}
                 {users.map((u) => {
                   const alreadyAdded = addedIds.includes(u.id)
                   const isAdding = addingId === u.id
@@ -202,16 +302,9 @@ export default function GroupSettingsModal({ open, onClose, chat, canManage }) {
                         <p className="text-xs opacity-70 truncate">{u.email}{u.phone_number ? ` · ${u.phone_number}` : ''}</p>
                       </div>
                       {alreadyAdded ? (
-                        <span className="flex items-center gap-1 text-xs text-wa-600 px-2 py-1">
-                          <FiUserCheck size={13} /> Added
-                        </span>
+                        <span className="flex items-center gap-1 text-xs text-wa-600 px-2 py-1"><FiUserCheck size={13} /> Added</span>
                       ) : (
-                        <button
-                          type="button"
-                          disabled={isAdding}
-                          onClick={() => doAddMember(u.id)}
-                          className="text-xs px-2 py-1 rounded bg-wa-600 text-white disabled:opacity-60"
-                        >
+                        <button type="button" disabled={isAdding} onClick={() => doAddMember(u.id)} className="text-xs px-2 py-1 rounded bg-wa-600 text-white disabled:opacity-60">
                           {isAdding ? '...' : 'Add'}
                         </button>
                       )}
@@ -221,12 +314,14 @@ export default function GroupSettingsModal({ open, onClose, chat, canManage }) {
               </div>
             </div>
           )}
+
+          {/* Group media */}
           <div className="rounded-xl border p-3 space-y-2">
             <p className="text-sm font-medium">Group media</p>
             <div className="flex gap-2">
-              <button type="button" onClick={() => setMediaTab('images')} className={`px-2 py-1 rounded-lg text-xs ${mediaTab === 'images' ? 'bg-wa-600 text-white' : 'bg-slate-200 dark:bg-slate-800'}`}>Images</button>
-              <button type="button" onClick={() => setMediaTab('files')} className={`px-2 py-1 rounded-lg text-xs ${mediaTab === 'files' ? 'bg-wa-600 text-white' : 'bg-slate-200 dark:bg-slate-800'}`}>Files</button>
-              <button type="button" onClick={() => setMediaTab('links')} className={`px-2 py-1 rounded-lg text-xs ${mediaTab === 'links' ? 'bg-wa-600 text-white' : 'bg-slate-200 dark:bg-slate-800'}`}>Links</button>
+              {['images', 'files', 'links'].map((t) => (
+                <button key={t} type="button" onClick={() => setMediaTab(t)} className={`px-2 py-1 rounded-lg text-xs capitalize ${mediaTab === t ? 'bg-wa-600 text-white' : 'bg-slate-200 dark:bg-slate-800'}`}>{t}</button>
+              ))}
             </div>
             {mediaTab === 'images' && (
               <div className="grid grid-cols-4 gap-2 max-h-40 overflow-auto">
@@ -236,7 +331,7 @@ export default function GroupSettingsModal({ open, onClose, chat, canManage }) {
             )}
             {mediaTab === 'files' && (
               <div className="space-y-1 max-h-40 overflow-auto">
-                {files.map((m) => <a key={m.id} href={m.attachment_url} target="_blank" rel="noreferrer" className="block text-xs underline truncate">{m.attachment_type} - {m.attachment_url}</a>)}
+                {files.map((m) => <a key={m.id} href={m.attachment_url} target="_blank" rel="noreferrer" className="block text-xs underline truncate">{m.attachment_type} — {m.attachment_url}</a>)}
                 {files.length === 0 && <p className="text-xs opacity-60">No files found</p>}
               </div>
             )}

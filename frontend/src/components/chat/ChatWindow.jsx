@@ -3,7 +3,7 @@ import { FiMic, FiPlus, FiSend, FiSettings, FiTrash2 } from 'react-icons/fi'
 import { motion } from 'framer-motion'
 import { useAuthStore } from '../../store/authStore'
 import { useChatStore } from '../../store/chatStore'
-import MessageBubble from './MessageBubble'
+import MessageBubble, { SystemBanner } from './MessageBubble'
 import AttachmentMenu from './AttachmentMenu'
 import GroupSettingsModal from './GroupSettingsModal'
 import GroupDetailsModal from './GroupDetailsModal'
@@ -169,17 +169,21 @@ export default function ChatWindow() {
 
       <div ref={listRef} onScroll={onScroll} className="flex-1 overflow-y-auto p-4 space-y-2">
         {hasMore && <p className="text-xs text-center opacity-60">Scroll up to load older messages</p>}
-        {messages.map((msg) => (
-          <MessageBubble
-            key={msg.id}
-            msg={msg}
-            mine={msg.sender === user?.id}
-            userId={user?.id}
-            memberCount={memberCount}
-            isGroup={activeChat.chat_type !== 'direct'}
-            onReply={() => setReplyTo(msg.id)}
-          />
-        ))}
+        {messages.map((msg) =>
+          msg.is_system ? (
+            <SystemBanner key={msg.id} text={msg.message || msg.display_message} />
+          ) : (
+            <MessageBubble
+              key={msg.id}
+              msg={msg}
+              mine={msg.sender === user?.id}
+              userId={user?.id}
+              memberCount={memberCount}
+              isGroup={activeChat.chat_type !== 'direct'}
+              onReply={() => setReplyTo(msg.id)}
+            />
+          )
+        )}
       </div>
       <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="px-4 py-2">
         {typingUsers.length > 0 && <p className="text-xs mb-1 text-wa-700">Someone is typing...</p>}

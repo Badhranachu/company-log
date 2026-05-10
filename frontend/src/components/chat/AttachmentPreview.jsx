@@ -1,14 +1,60 @@
 import { useState } from 'react'
-import { FiDownload, FiX } from 'react-icons/fi'
+import { FiDownload, FiX, FiPlay } from 'react-icons/fi'
 
 function ImageLightbox({ src, onClose }) {
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center" onClick={onClose}>
+    <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center" onClick={onClose}>
       <button className="absolute top-4 right-4 text-white p-2 rounded-full bg-black/40 hover:bg-black/60" onClick={onClose}>
         <FiX size={22} />
       </button>
-      <img src={src} alt="full" className="max-w-[92vw] max-h-[88vh] rounded-xl object-contain shadow-2xl" onClick={(e) => e.stopPropagation()} />
+      <img
+        src={src}
+        alt="full"
+        className="max-w-[92vw] max-h-[88vh] rounded-xl object-contain shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      />
     </div>
+  )
+}
+
+function VideoPlayer({ src }) {
+  const [expanded, setExpanded] = useState(false)
+  return (
+    <>
+      <div
+        className="mt-2 rounded-xl overflow-hidden bg-black max-w-[260px] cursor-pointer relative group"
+        style={{ maxHeight: 180 }}
+        onClick={() => setExpanded(true)}
+      >
+        <video
+          className="w-full h-full object-cover rounded-xl"
+          style={{ maxHeight: 180 }}
+          preload="metadata"
+        >
+          <source src={src} />
+        </video>
+        <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/30 transition">
+          <div className="w-10 h-10 rounded-full bg-white/80 flex items-center justify-center shadow">
+            <FiPlay size={18} className="text-slate-800 ml-0.5" />
+          </div>
+        </div>
+      </div>
+      {expanded && (
+        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center" onClick={() => setExpanded(false)}>
+          <button className="absolute top-4 right-4 text-white p-2 rounded-full bg-black/40 hover:bg-black/60" onClick={() => setExpanded(false)}>
+            <FiX size={22} />
+          </button>
+          <video
+            controls
+            autoPlay
+            className="max-w-[92vw] max-h-[88vh] rounded-xl shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <source src={src} />
+          </video>
+        </div>
+      )}
+    </>
   )
 }
 
@@ -22,9 +68,10 @@ export default function AttachmentPreview({ msg }) {
         <div className="mt-2 rounded-xl overflow-hidden cursor-zoom-in max-w-[260px]" onClick={() => setLightbox(true)}>
           <img
             src={msg.attachment_url}
-            alt="image"
+            alt=""
             className="w-full object-cover rounded-xl"
             style={{ maxHeight: 260 }}
+            onError={(e) => { e.currentTarget.style.display = 'none' }}
           />
         </div>
         {lightbox && <ImageLightbox src={msg.attachment_url} onClose={() => setLightbox(false)} />}
@@ -33,11 +80,7 @@ export default function AttachmentPreview({ msg }) {
   }
 
   if (msg.attachment_type === 'video') {
-    return (
-      <video controls className="rounded-xl mt-2 max-w-[260px] w-full" style={{ maxHeight: 200 }}>
-        <source src={msg.attachment_url} />
-      </video>
-    )
+    return <VideoPlayer src={msg.attachment_url} />
   }
 
   return (

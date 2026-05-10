@@ -157,44 +157,63 @@ export const useChatStore = create((set, get) => ({
     const user = JSON.parse(sessionStorage.getItem('user') || 'null')
     const clientId = `file-${Date.now()}`
     const localUrl = URL.createObjectURL(file)
-    const guessedType = file.type.startsWith('image/')
-      ? 'image'
-      : file.type.startsWith('video/')
-        ? 'video'
-        : file.type.startsWith('audio/')
-          ? 'other'
-          : 'document'
+    const isVideo = file.type.startsWith('video/')
+    const guessedType = file.type.startsWith('image/') ? 'image'
+      : isVideo ? 'video'
+      : file.type.startsWith('audio/') ? 'other'
+      : 'document'
+
     const optimistic = {
-      id: clientId,
-      client_id: clientId,
-      chatbox: active.id,
-      sender: user?.id,
-      sender_name: user?.name,
-      message: message || '',
-      attachment_url: localUrl,
-      attachment_type: guessedType,
-      created_at: new Date().toISOString(),
-      optimistic: true,
-      seen_by_ids: [],
+      id: clientId, client_id: clientId, chatbox: active.id,
+      sender: user?.id, sender_name: user?.name, message: message || '',
+      attachment_url: localUrl, attachment_type: guessedType,
+      created_at: new Date().toISOString(), optimistic: true, seen_by_ids: [],
     }
     set((s) => ({ messages: [...s.messages, optimistic] }))
 
-    const formData = new FormData()
-    formData.append('chatbox', active.id)
-    formData.append('message', message)
-    formData.append('attachment', file)
     try {
-      const { data } = await api.post('/messages/', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-        onUploadProgress: (e) => {
-          const value = e.total ? Math.round((e.loaded * 100) / e.total) : 0
-          set({ uploadProgress: value })
+      if (isVideo && file.size > 5 * 1024 * 1024) {
+        // Chunked upload for videos > 5 MB
+        const CHUNK = 2 * 1024 * 1024 // 2 MB chunks
+        const totalChunks = Math.ceil(file.size / CHUNK)
+        const uploadId = `${Date.now()}-${file.name}`
+        let lastData = null
+        for (let i = 0; i < totalChunks; i++) {
+          const blob = file.slice(i * CHUNK, (i + 1) * CHUNK)
+          const chunkFile = new File([blob], file.name, { type: file.type })
+          const fd = new FormData()
+          fd.append('chatbox', active.id)
+          fd.append('message', i === 0 ? message : '')
+          fd.append('attachment', chunkFile)
+          fd.append('upload_id', uploadId)
+          fd.append('chunk_index', i)
+          fd.append('total_chunks', totalChunks)
+          const { data } = await api.post('/messages/', fd, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+            onUploadProgress: (e) => {
+              const chunkPct = e.total ? e.loaded / e.total : 1
+              const overall = Math.round(((i + chunkPct) / totalChunks) * 100)
+              set({ uploadProgress: overall })
+            },
+          })
+          if (data.id) lastData = data
         }
-      })
-      set((s) => ({
-        messages: s.messages.map((m) => (m.client_id === clientId ? data : m)),
-        uploadProgress: 0
-      }))
+        if (lastData) {
+          set((s) => ({ messages: s.messages.map((m) => m.client_id === clientId ? lastData : m), uploadProgress: 0 }))
+        }
+      } else {
+        const formData = new FormData()
+        formData.append('chatbox', active.id)
+        formData.append('message', message)
+        formData.append('attachment', file)
+        const { data } = await api.post('/messages/', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          onUploadProgress: (e) => {
+            set({ uploadProgress: e.total ? Math.round((e.loaded * 100) / e.total) : 0 })
+          },
+        })
+        set((s) => ({ messages: s.messages.map((m) => m.client_id === clientId ? data : m), uploadProgress: 0 }))
+      }
       toast.success('File uploaded')
     } catch (e) {
       set((s) => ({ messages: s.messages.filter((m) => m.client_id !== clientId), uploadProgress: 0 }))
@@ -268,6 +287,13 @@ export const useChatStore = create((set, get) => ({
     const socket = get().socket
     await api.post(`/messages/${messageId}/seen/`)
     if (socket?.readyState === 1) socket.send(JSON.stringify({ type: 'seen', message_id: messageId }))
+  },
+  async pinChat(chatboxId) {
+    const { data } = await api.post(`/chatboxes/${chatboxId}/pin_chat/`)
+    set((s) => ({
+      chatboxes: s.chatboxes.map((c) => c.id === chatboxId ? { ...c, is_pinned: data.is_pinned } : c)
+    }))
+    return data
   },
   async startDirectMessage(userId) {
     const { data } = await api.post('/chatboxes/direct_message/', { user_id: userId })
