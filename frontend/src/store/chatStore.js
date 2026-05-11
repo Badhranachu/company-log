@@ -4,13 +4,8 @@ import api, { API_BASE_URL } from '../lib/api'
 
 function resolveWsBase() {
   if (import.meta.env.VITE_WS_URL) return import.meta.env.VITE_WS_URL
-  try {
-    const u = new URL(API_BASE_URL)
-    const proto = u.protocol === 'https:' ? 'wss:' : 'ws:'
-    return `${proto}//${u.host}`
-  } catch {
-    return 'ws://localhost:8000'
-  }
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${proto}//${window.location.host}`
 }
 
 export const useChatStore = create((set, get) => ({
