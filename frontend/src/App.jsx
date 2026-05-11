@@ -9,6 +9,7 @@ const AddUserPage = lazy(() => import('./pages/AddUserPage'))
 const UsersListPage = lazy(() => import('./pages/UsersListPage'))
 const ProfilePage = lazy(() => import('./pages/ProfilePage'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
+const ManageGroupsPage = lazy(() => import('./pages/ManageGroupsPage'))
 
 function Loader() {
   return <div className="p-6 animate-pulse">Loading...</div>
@@ -31,6 +32,7 @@ export default function App() {
         <Route path="users" element={<Suspense fallback={<Loader />}><UsersListPage /></Suspense>} />
         <Route path="profile" element={<Suspense fallback={<Loader />}><ProfilePage /></Suspense>} />
         <Route path="settings" element={<Suspense fallback={<Loader />}><SettingsPage /></Suspense>} />
+        <Route path="manage-groups" element={<Suspense fallback={<Loader />}><ManageGroupsPage /></Suspense>} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

@@ -16,10 +16,16 @@ class ChatBoxViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
+        show_deleted = self.request.query_params.get('deleted') == 'true'
+        if show_deleted:
+            if user.role != 'owner':
+                return ChatBox.objects.none()
+            return ChatBox.objects.filter(is_deleted=True)
         if user.role == 'owner':
-            return ChatBox.objects.all()
+            return ChatBox.objects.filter(is_deleted=False)
         return ChatBox.objects.filter(
-            Q(created_by=user) | Q(memberships__user=user)
+            Q(created_by=user) | Q(memberships__user=user),
+            is_deleted=False,
         ).distinct()
 
     def perform_create(self, serializer):
@@ -146,12 +152,41 @@ class ChatBoxViewSet(viewsets.ModelViewSet):
     @decorators.action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def pin_chat(self, request, pk=None):
         chatbox = self.get_object()
-        member = ChatBoxMember.objects.filter(chatbox=chatbox, user=request.user).first()
-        if not member:
-            return response.Response({'detail': 'Not a member'}, status=status.HTTP_403_FORBIDDEN)
+        member, _ = ChatBoxMember.objects.get_or_create(
+            chatbox=chatbox, user=request.user,
+            defaults={'can_chat': True, 'is_admin': request.user.role == 'owner'},
+        )
+        # Enforce max 5 pinned chats per user
+        if not member.is_pinned:
+            pinned_count = ChatBoxMember.objects.filter(user=request.user, is_pinned=True).count()
+            if pinned_count >= 5:
+                return response.Response({'detail': 'Maximum 5 chats can be pinned.'}, status=status.HTTP_400_BAD_REQUEST)
         member.is_pinned = not member.is_pinned
         member.save(update_fields=['is_pinned'])
         return response.Response({'is_pinned': member.is_pinned})
+
+    @decorators.action(detail=True, methods=['post'])
+    def delete_group(self, request, pk=None):
+        if request.user.role != 'owner':
+            return response.Response({'detail': 'Only admin can delete groups.'}, status=status.HTTP_403_FORBIDDEN)
+        chatbox = self.get_object()
+        chatbox.is_deleted = True
+        chatbox.deleted_at = timezone.now()
+        chatbox.save(update_fields=['is_deleted', 'deleted_at', 'updated_at'])
+        return response.Response({'detail': 'Group deleted'})
+
+    @decorators.action(detail=True, methods=['post'])
+    def restore_group(self, request, pk=None):
+        if request.user.role != 'owner':
+            return response.Response({'detail': 'Only admin can restore groups.'}, status=status.HTTP_403_FORBIDDEN)
+        # Must use unfiltered queryset to find deleted groups
+        chatbox = ChatBox.objects.filter(pk=pk, is_deleted=True).first()
+        if not chatbox:
+            return response.Response({'detail': 'Deleted group not found.'}, status=status.HTTP_404_NOT_FOUND)
+        chatbox.is_deleted = False
+        chatbox.deleted_at = None
+        chatbox.save(update_fields=['is_deleted', 'deleted_at', 'updated_at'])
+        return response.Response({'detail': 'Group restored'})
 
     @decorators.action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def direct_message(self, request):

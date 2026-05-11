@@ -350,11 +350,30 @@ export const useChatStore = create((set, get) => ({
     if (socket?.readyState === 1) socket.send(JSON.stringify({ type: 'seen', message_id: messageId }))
   },
   async pinChat(chatboxId) {
-    const { data } = await api.post(`/chatboxes/${chatboxId}/pin_chat/`)
+    try {
+      const { data } = await api.post(`/chatboxes/${chatboxId}/pin_chat/`)
+      set((s) => ({
+        chatboxes: s.chatboxes.map((c) => c.id === chatboxId ? { ...c, is_pinned: data.is_pinned } : c)
+      }))
+      return data
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Could not pin chat')
+      return { is_pinned: false }
+    }
+  },
+  async deleteGroup(chatboxId) {
+    await api.post(`/chatboxes/${chatboxId}/delete_group/`)
     set((s) => ({
-      chatboxes: s.chatboxes.map((c) => c.id === chatboxId ? { ...c, is_pinned: data.is_pinned } : c)
+      chatboxes: s.chatboxes.filter((c) => c.id !== chatboxId),
+      activeChat: s.activeChat?.id === chatboxId ? null : s.activeChat,
     }))
-    return data
+  },
+  async restoreGroup(chatboxId) {
+    await api.post(`/chatboxes/${chatboxId}/restore_group/`)
+  },
+  async fetchDeletedGroups() {
+    const { data } = await api.get('/chatboxes/', { params: { deleted: 'true' } })
+    return data.results || data
   },
   async startDirectMessage(userId) {
     const { data } = await api.post('/chatboxes/direct_message/', { user_id: userId })

@@ -1,4 +1,4 @@
-import { FiLogOut, FiMessageSquare, FiPlusCircle, FiSettings, FiUser, FiUsers } from 'react-icons/fi'
+import { FiLogOut, FiMessageSquare, FiPlusCircle, FiSettings, FiTrash2, FiUser, FiUsers } from 'react-icons/fi'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../store/authStore'
 import { useChatStore } from '../../store/chatStore'
@@ -7,6 +7,7 @@ const navItems = [
   { to: '/', label: 'Chats', icon: FiMessageSquare },
   { to: '/add-user', label: 'Add User', icon: FiPlusCircle, ownerOnly: true },
   { to: '/users', label: 'Users List', icon: FiUsers, ownerOnly: true },
+  { to: '/manage-groups', label: 'Manage Groups', icon: FiTrash2, ownerOnly: true },
   { to: '/profile', label: 'Profile', icon: FiUser },
   { to: '/settings', label: 'Settings', icon: FiSettings },
 ]

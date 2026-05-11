@@ -10,11 +10,12 @@ class ChatBoxSerializer(serializers.ModelSerializer):
     last_message_at = serializers.SerializerMethodField()
     unread_count = serializers.SerializerMethodField()
     member_count = serializers.SerializerMethodField()
+    is_pinned = serializers.SerializerMethodField()
 
     class Meta:
         model = ChatBox
         fields = '__all__'
-        read_only_fields = ['created_by', 'created_at', 'updated_at']
+        read_only_fields = ['created_by', 'created_at', 'updated_at', 'is_deleted', 'deleted_at']
 
     def get_group_avatar_url(self, obj):
         request = self.context.get("request")
@@ -52,6 +53,14 @@ class ChatBoxSerializer(serializers.ModelSerializer):
 
     def get_member_count(self, obj):
         return obj.memberships.count()
+
+    def get_is_pinned(self, obj):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if not user or user.is_anonymous:
+            return False
+        membership = obj.memberships.filter(user=user).first()
+        return membership.is_pinned if membership else False
 
 
 class ChatBoxMemberSerializer(serializers.ModelSerializer):

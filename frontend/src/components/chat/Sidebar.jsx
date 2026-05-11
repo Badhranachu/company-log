@@ -1,28 +1,40 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { FiBellOff, FiMapPin, FiMessageCircle, FiMoon, FiMoreVertical, FiPlus, FiSearch, FiSun, FiUsers } from 'react-icons/fi'
+import { FiBellOff, FiMapPin, FiMessageCircle, FiMoon, FiMoreVertical, FiPlus, FiSearch, FiSun, FiTrash2, FiUsers } from 'react-icons/fi'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useChatStore } from '../../store/chatStore'
 import toast from 'react-hot-toast'
 
-function ChatContextMenu({ chat, onClose }) {
+function ChatContextMenu({ chat, user, onClose }) {
   const pinChat = useChatStore((s) => s.pinChat)
-  const ref = useRef(null)
+  const deleteGroup = useChatStore((s) => s.deleteGroup)
+  const chatboxes = useChatStore((s) => s.chatboxes)
 
   const handlePin = async () => {
     onClose()
+    const pinnedCount = chatboxes.filter((c) => c.is_pinned).length
+    if (!chat.is_pinned && pinnedCount >= 5) {
+      toast.error('Maximum 5 chats can be pinned')
+      return
+    }
+    const result = await pinChat(chat.id)
+    if (result.is_pinned !== undefined) toast.success(result.is_pinned ? 'Chat pinned' : 'Chat unpinned')
+  }
+
+  const handleDelete = async () => {
+    onClose()
+    if (!window.confirm(`Delete "${chat.title}"? Members will lose access. Admin can restore it.`)) return
     try {
-      const result = await pinChat(chat.id)
-      toast.success(result.is_pinned ? 'Chat pinned' : 'Chat unpinned')
-    } catch { toast.error('Could not pin chat') }
+      await deleteGroup(chat.id)
+      toast.success('Group deleted')
+    } catch { toast.error('Could not delete group') }
   }
 
   return (
     <motion.div
-      ref={ref}
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.95 }}
-      className="absolute right-2 top-8 z-50 w-40 rounded-xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 shadow-xl overflow-hidden"
+      className="absolute right-2 top-8 z-50 w-44 rounded-xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 shadow-xl overflow-hidden"
       onClick={(e) => e.stopPropagation()}
     >
       <button
@@ -32,6 +44,15 @@ function ChatContextMenu({ chat, onClose }) {
         <FiMapPin size={13} className={chat.is_pinned ? 'text-wa-600' : ''} />
         {chat.is_pinned ? 'Unpin chat' : 'Pin chat'}
       </button>
+      {user?.role === 'owner' && chat.chat_type !== 'direct' && (
+        <button
+          onClick={handleDelete}
+          className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition"
+        >
+          <FiTrash2 size={13} />
+          Delete group
+        </button>
+      )}
     </motion.div>
   )
 }
@@ -142,14 +163,13 @@ export default function Sidebar({ onCreate, dark, onToggleDark, user, roleLabel 
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setMenuChatId(menuOpen ? null : chat.id) }}
-                className="absolute top-3 right-3 p-1 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 opacity-0 group-hover:opacity-100 transition"
-                style={{ opacity: menuOpen ? 1 : undefined }}
+                className="absolute top-3 right-3 p-1 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition opacity-60 hover:opacity-100"
               >
                 <FiMoreVertical size={14} />
               </button>
               <AnimatePresence>
                 {menuOpen && (
-                  <ChatContextMenu chat={chat} onClose={() => setMenuChatId(null)} />
+                  <ChatContextMenu chat={chat} user={user} onClose={() => setMenuChatId(null)} />
                 )}
               </AnimatePresence>
             </motion.div>
