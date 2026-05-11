@@ -67,7 +67,7 @@ class AuthViewSet(viewsets.ViewSet):
             otp = _send_otp(user.email, 'Company Log — Password Change OTP', 'password change')
         except Exception:
             return response.Response({'detail': 'Failed to send OTP. Check email config.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        cache.set(f'otp_pwd_{user.id}', otp, timeout=600)
+        cache.set(f'otp_pwd_{user.id}', otp, timeout=300)
         return response.Response({'detail': f'OTP sent to {user.email}'})
 
     @decorators.action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated])
@@ -97,7 +97,7 @@ class AuthViewSet(viewsets.ViewSet):
             otp = _send_otp(new_email, 'Company Log — Email Change OTP', 'email change')
         except Exception:
             return response.Response({'detail': 'Failed to send OTP. Check the email address.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        cache.set(f'otp_email_{request.user.id}', {'otp': otp, 'new_email': new_email}, timeout=600)
+        cache.set(f'otp_email_{request.user.id}', {'otp': otp, 'new_email': new_email}, timeout=300)
         return response.Response({'detail': f'OTP sent to {new_email}'})
 
     @decorators.action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated])

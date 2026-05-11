@@ -1,9 +1,11 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { FiCheck, FiChevronRight, FiLock, FiMail } from 'react-icons/fi'
 import toast from 'react-hot-toast'
 import api from '../lib/api'
 import { useAuthStore } from '../store/authStore'
 import PageActions from '../components/layout/PageActions'
+
+const OTP_TTL = 300 // seconds — must match backend timeout
 
 function OtpInput({ value, onChange }) {
   return (
@@ -16,6 +18,35 @@ function OtpInput({ value, onChange }) {
       onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, 6))}
       className="w-full rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-2.5 bg-transparent text-sm outline-none focus:ring-2 focus:ring-wa-400 tracking-widest text-center text-lg font-semibold"
     />
+  )
+}
+
+function OtpTimer({ onExpire }) {
+  const [seconds, setSeconds] = useState(OTP_TTL)
+  const intervalRef = useRef(null)
+
+  useEffect(() => {
+    intervalRef.current = setInterval(() => {
+      setSeconds((s) => {
+        if (s <= 1) {
+          clearInterval(intervalRef.current)
+          onExpire()
+          return 0
+        }
+        return s - 1
+      })
+    }, 1000)
+    return () => clearInterval(intervalRef.current)
+  }, [onExpire])
+
+  const m = String(Math.floor(seconds / 60)).padStart(2, '0')
+  const s = String(seconds % 60).padStart(2, '0')
+  const urgent = seconds <= 60
+
+  return (
+    <p className={`text-xs font-medium tabular-nums ${urgent ? 'text-red-500 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'}`}>
+      OTP expires in <span className="font-bold">{m}:{s}</span>
+    </p>
   )
 }
 
@@ -40,10 +71,12 @@ function Section({ icon: Icon, title, children }) {
 function ChangeEmail() {
   const setUser = useAuthStore((s) => s.setUser)
   const user = useAuthStore((s) => s.user)
-  const [step, setStep] = useState(1) // 1=enter email, 2=enter otp
+  const [step, setStep] = useState(1)
   const [newEmail, setNewEmail] = useState('')
   const [otp, setOtp] = useState('')
   const [loading, setLoading] = useState(false)
+
+  const reset = () => { setStep(1); setNewEmail(''); setOtp('') }
 
   const sendOtp = async () => {
     if (!newEmail || !newEmail.includes('@')) { toast.error('Enter a valid email'); return }
@@ -64,10 +97,15 @@ function ChangeEmail() {
       const { data } = await api.post('/auth/verify_email_change/', { otp })
       toast.success(data.detail)
       setUser({ ...user, email: data.email })
-      setStep(1); setNewEmail(''); setOtp('')
+      reset()
     } catch (e) {
       toast.error(e?.response?.data?.detail || 'Invalid OTP')
     } finally { setLoading(false) }
+  }
+
+  const handleExpire = () => {
+    toast.error('OTP expired — please request a new one')
+    reset()
   }
 
   return (
@@ -95,10 +133,11 @@ function ChangeEmail() {
           <p className="text-xs text-wa-700 dark:text-wa-400 bg-wa-50 dark:bg-wa-900/20 rounded-xl px-3 py-2">
             OTP sent to <strong>{newEmail}</strong>. Enter it below to confirm.
           </p>
+          <OtpTimer onExpire={handleExpire} />
           <OtpInput value={otp} onChange={setOtp} />
           <div className="flex gap-2">
             <button
-              onClick={() => { setStep(1); setOtp('') }}
+              onClick={reset}
               className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-medium transition hover:bg-slate-50 dark:hover:bg-slate-800"
             >Back</button>
             <button
@@ -118,11 +157,13 @@ function ChangeEmail() {
 
 function ChangePassword() {
   const user = useAuthStore((s) => s.user)
-  const [step, setStep] = useState(1) // 1=request otp, 2=enter otp+new pw
+  const [step, setStep] = useState(1)
   const [otp, setOtp] = useState('')
   const [newPw, setNewPw] = useState('')
   const [confirmPw, setConfirmPw] = useState('')
   const [loading, setLoading] = useState(false)
+
+  const reset = () => { setStep(1); setOtp(''); setNewPw(''); setConfirmPw('') }
 
   const sendOtp = async () => {
     setLoading(true)
@@ -143,10 +184,15 @@ function ChangePassword() {
     try {
       const { data } = await api.post('/auth/change_password/', { otp, new_password: newPw })
       toast.success(data.detail)
-      setStep(1); setOtp(''); setNewPw(''); setConfirmPw('')
+      reset()
     } catch (e) {
       toast.error(e?.response?.data?.detail || 'Failed to change password')
     } finally { setLoading(false) }
+  }
+
+  const handleExpire = () => {
+    toast.error('OTP expired — please request a new one')
+    reset()
   }
 
   return (
@@ -167,6 +213,7 @@ function ChangePassword() {
           <p className="text-xs text-wa-700 dark:text-wa-400 bg-wa-50 dark:bg-wa-900/20 rounded-xl px-3 py-2">
             OTP sent to <strong>{user?.email}</strong>. Enter it along with your new password.
           </p>
+          <OtpTimer onExpire={handleExpire} />
           <OtpInput value={otp} onChange={setOtp} />
           <input
             type="password"
@@ -184,7 +231,7 @@ function ChangePassword() {
           />
           <div className="flex gap-2">
             <button
-              onClick={() => { setStep(1); setOtp('') }}
+              onClick={reset}
               className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition"
             >Back</button>
             <button

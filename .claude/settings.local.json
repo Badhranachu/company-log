@@ -19,7 +19,11 @@
       "Bash(git push *)",
       "Bash(ipconfig)",
       "Bash(findstr /i \"IPv4\")",
-      "Bash(python manage.py makemigrations)"
+      "Bash(python manage.py makemigrations)",
+      "Bash(python generate-icons.py)",
+      "Bash(npm install *)",
+      "Bash(findstr \"vite-plugin-pwa\")",
+      "Bash(npm run *)"
     ]
   }
 }
