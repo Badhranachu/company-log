@@ -14,7 +14,7 @@ def _require_env(name: str, default: str = "") -> str:
 
 SECRET_KEY = _require_env("DJANGO_SECRET_KEY")
 DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() == "true"
-ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "*").split(",")
+ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "*").split(",STATIC_URL = "static/"")
 
 INSTALLED_APPS = [
     "daphne",
@@ -93,6 +93,7 @@ TIME_ZONE = "UTC"
 USE_I18N = True
 USE_TZ = True
 STATIC_URL = "static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
