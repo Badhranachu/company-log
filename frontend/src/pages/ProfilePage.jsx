@@ -9,6 +9,7 @@ export default function ProfilePage() {
   const setUser = useAuthStore((s) => s.setUser)
 
   const [form, setForm] = useState({
+    name: user?.name || '',
     username_alias: user?.username_alias || '',
     phone_number: user?.phone_number || '',
     bio: user?.bio || '',
@@ -17,6 +18,7 @@ export default function ProfilePage() {
   const [profilePic, setProfilePic] = useState(null)
   const [banner, setBanner] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [editing, setEditing] = useState(false)
 
   const save = async (e) => {
     e.preventDefault()
@@ -30,6 +32,7 @@ export default function ProfilePage() {
         headers: { 'Content-Type': 'multipart/form-data' },
       })
       setUser(data)
+      setEditing(false)
       toast.success('Profile updated')
     } catch (e) {
       toast.error(e?.response?.data?.detail || 'Failed to save profile')
@@ -70,44 +73,78 @@ export default function ProfilePage() {
           {/* Read-only info */}
           <div className="text-sm bg-slate-50 dark:bg-slate-800/60 rounded-xl px-4 py-2.5 space-y-0.5">
             <p className="font-semibold">{user?.name}</p>
-            <p className="opacity-60 text-xs">{user?.email} · {user?.role === 'owner' ? 'Admin' : 'User'}</p>
+            <p className="opacity-60 text-xs">{user?.email}</p>
           </div>
 
-          <div className="grid md:grid-cols-2 gap-3">
-            <input
-              className="w-full rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-2.5 bg-transparent text-sm outline-none focus:ring-2 focus:ring-wa-400"
-              placeholder="Username / Alias"
-              value={form.username_alias}
-              onChange={(e) => setForm({ ...form, username_alias: e.target.value })}
-            />
-            <input
-              className="w-full rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-2.5 bg-transparent text-sm outline-none focus:ring-2 focus:ring-wa-400"
-              placeholder="Phone number"
-              value={form.phone_number}
-              onChange={(e) => setForm({ ...form, phone_number: e.target.value })}
-            />
-            <input
-              className="md:col-span-2 w-full rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-2.5 bg-transparent text-sm outline-none focus:ring-2 focus:ring-wa-400"
-              placeholder="Department"
-              value={form.department}
-              onChange={(e) => setForm({ ...form, department: e.target.value })}
-            />
-            <textarea
-              className="md:col-span-2 w-full rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-2.5 bg-transparent text-sm outline-none focus:ring-2 focus:ring-wa-400 resize-none"
-              rows={3}
-              placeholder="Bio / About"
-              value={form.bio}
-              onChange={(e) => setForm({ ...form, bio: e.target.value })}
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={saving}
-            className="w-full rounded-xl px-4 py-3 bg-wa-600 hover:bg-wa-700 text-white font-medium transition disabled:opacity-60"
-          >
-            {saving ? 'Saving…' : 'Save Profile'}
-          </button>
+          {!editing ? (
+            <>
+              <div className="space-y-2 text-sm text-slate-600 dark:text-slate-300">
+                {user?.username_alias && <p><span className="opacity-50">Alias:</span> {user.username_alias}</p>}
+                {user?.phone_number && <p><span className="opacity-50">Phone:</span> {user.phone_number}</p>}
+                {user?.department && <p><span className="opacity-50">Dept:</span> {user.department}</p>}
+                {user?.bio && <p><span className="opacity-50">Bio:</span> {user.bio}</p>}
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditing(true)}
+                className="w-full rounded-xl px-4 py-3 bg-wa-600 hover:bg-wa-700 text-white font-medium transition"
+              >
+                Edit Profile
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="grid md:grid-cols-2 gap-3">
+                <input
+                  className="md:col-span-2 w-full rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-2.5 bg-transparent text-sm outline-none focus:ring-2 focus:ring-wa-400"
+                  placeholder="Full Name"
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                />
+                <input
+                  className="w-full rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-2.5 bg-transparent text-sm outline-none focus:ring-2 focus:ring-wa-400"
+                  placeholder="Username / Alias"
+                  value={form.username_alias}
+                  onChange={(e) => setForm({ ...form, username_alias: e.target.value })}
+                />
+                <input
+                  className="w-full rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-2.5 bg-transparent text-sm outline-none focus:ring-2 focus:ring-wa-400"
+                  placeholder="Phone number"
+                  value={form.phone_number}
+                  onChange={(e) => setForm({ ...form, phone_number: e.target.value })}
+                />
+                <input
+                  className="md:col-span-2 w-full rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-2.5 bg-transparent text-sm outline-none focus:ring-2 focus:ring-wa-400"
+                  placeholder="Department"
+                  value={form.department}
+                  onChange={(e) => setForm({ ...form, department: e.target.value })}
+                />
+                <textarea
+                  className="md:col-span-2 w-full rounded-xl border border-slate-200 dark:border-slate-700 px-3 py-2.5 bg-transparent text-sm outline-none focus:ring-2 focus:ring-wa-400 resize-none"
+                  rows={3}
+                  placeholder="Bio / About"
+                  value={form.bio}
+                  onChange={(e) => setForm({ ...form, bio: e.target.value })}
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditing(false)}
+                  className="flex-1 rounded-xl px-4 py-3 border border-slate-200 dark:border-slate-700 text-sm font-medium transition hover:bg-slate-50 dark:hover:bg-slate-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="flex-1 rounded-xl px-4 py-3 bg-wa-600 hover:bg-wa-700 text-white font-medium transition disabled:opacity-60"
+                >
+                  {saving ? 'Saving…' : 'Save Profile'}
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </form>
     </div>

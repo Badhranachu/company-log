@@ -64,3 +64,21 @@ class User(AbstractUser):
     @property
     def is_suspended(self):
         return bool(self.suspended_until and self.suspended_until > timezone.now())
+
+
+class OTPCode(models.Model):
+    PURPOSE_EMAIL = 'email_change'
+    PURPOSE_PASSWORD = 'password_change'
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='otp_codes')
+    purpose = models.CharField(max_length=20)
+    otp = models.CharField(max_length=6)
+    new_email = models.EmailField(blank=True, default='')
+    expires_at = models.DateTimeField()
+
+    class Meta:
+        indexes = [models.Index(fields=['user', 'purpose'])]
+
+    @property
+    def is_valid(self):
+        return timezone.now() < self.expires_at

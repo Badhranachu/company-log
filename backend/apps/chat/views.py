@@ -3,6 +3,8 @@ from django.utils import timezone
 from datetime import timedelta
 from rest_framework import decorators, permissions, response, status, viewsets
 from rest_framework.exceptions import PermissionDenied
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
 from .models import ChatBox, ChatBoxMember, Message
 from .permissions import ChatBoxPermission, MessagePermission
 from .serializers import ChatBoxMemberSerializer, ChatBoxSerializer, MessageSerializer, MessageUpdateSerializer
@@ -223,12 +225,13 @@ class ChatBoxViewSet(viewsets.ModelViewSet):
     def members(self, request, pk=None):
         chatbox = self.get_object()
         memberships = chatbox.memberships.select_related('user').all()
+        is_owner = request.user.role == 'owner'
         data = [
             {
                 'id': m.user.id,
                 'name': m.user.name,
                 'email': m.user.email,
-                'is_admin': m.is_admin,
+                **(({'is_admin': m.is_admin} if is_owner else {})),
                 'profile_picture': request.build_absolute_uri(m.user.profile_picture.url) if m.user.profile_picture else None,
             }
             for m in memberships
@@ -327,6 +330,10 @@ class MessageViewSet(viewsets.ModelViewSet):
             return response.Response({'detail': 'Only sender can toggle tick'}, status=status.HTTP_403_FORBIDDEN)
         message.is_ticked = not message.is_ticked
         message.save(update_fields=['is_ticked'])
+        async_to_sync(get_channel_layer().group_send)(
+            f'chat_{message.chatbox_id}',
+            {'type': 'tick_event', 'message_id': message.id, 'is_ticked': message.is_ticked}
+        )
         return response.Response({'is_ticked': message.is_ticked})
 
     @decorators.action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])

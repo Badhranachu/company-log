@@ -44,7 +44,7 @@ function ChatContextMenu({ chat, user, onClose }) {
         <FiMapPin size={13} className={chat.is_pinned ? 'text-wa-600' : ''} />
         {chat.is_pinned ? 'Unpin chat' : 'Pin chat'}
       </button>
-      {user?.role === 'owner' && chat.chat_type !== 'direct' && (
+      {chat.created_by === user?.id && chat.chat_type !== 'direct' && (
         <button
           onClick={handleDelete}
           className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition"
@@ -57,7 +57,7 @@ function ChatContextMenu({ chat, user, onClose }) {
   )
 }
 
-export default function Sidebar({ onCreate, dark, onToggleDark, user, roleLabel }) {
+export default function Sidebar({ onCreate, dark, onToggleDark, user }) {
   const [search, setSearch] = useState('')
   const [menuChatId, setMenuChatId] = useState(null)
   const chatboxes = useChatStore((s) => s.chatboxes)
@@ -88,21 +88,27 @@ export default function Sidebar({ onCreate, dark, onToggleDark, user, roleLabel 
   return (
     <aside className="w-full h-full md:max-w-sm border-r border-white/40 bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl flex flex-col overflow-x-hidden">
       <div className="p-3 border-b border-white/40 space-y-2">
-        {/* User info + dark mode toggle */}
+        {/* User info + dark mode toggle + new chat */}
         <div className="flex items-center justify-between">
-          {user && (
-            <div className="min-w-0">
-              <p className="font-semibold text-sm truncate">{user.name}</p>
-              <p className="text-xs opacity-50">{roleLabel}</p>
-            </div>
-          )}
-          <button
-            onClick={onToggleDark}
-            className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition shrink-0"
-            title={dark ? 'Day mode' : 'Night mode'}
-          >
-            {dark ? <FiSun size={16} /> : <FiMoon size={16} />}
-          </button>
+          <div className="min-w-0">
+            <p className="font-semibold text-sm truncate">Company Log</p>
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              onClick={onToggleDark}
+              className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+              title={dark ? 'Day mode' : 'Night mode'}
+            >
+              {dark ? <FiSun size={16} /> : <FiMoon size={16} />}
+            </button>
+            <button
+              onClick={onCreate}
+              className="p-2 rounded-full bg-wa-600 hover:bg-wa-700 active:bg-wa-800 text-white transition"
+              title="New Chat"
+            >
+              <FiPlus size={16} />
+            </button>
+          </div>
         </div>
         <div className="rounded-xl px-3 py-2 bg-slate-100/90 dark:bg-slate-800 flex items-center gap-2">
           <FiSearch />
@@ -112,7 +118,7 @@ export default function Sidebar({ onCreate, dark, onToggleDark, user, roleLabel 
       <div className="flex-1 overflow-y-auto">
         {filtered.map((chat) => {
           const isDM = chat.chat_type === 'direct'
-          const avatarSrc = chat.group_avatar_url || `https://placehold.co/40x40/4ade80/ffffff?text=${encodeURIComponent((chat.title || 'G').slice(0, 1).toUpperCase())}`
+          const avatarSrc = chat.dm_avatar_url || chat.group_avatar_url || `https://placehold.co/40x40/4ade80/ffffff?text=${encodeURIComponent((chat.title || 'G').slice(0, 1).toUpperCase())}`
           const menuOpen = menuChatId === chat.id
           return (
             <motion.div
@@ -163,7 +169,7 @@ export default function Sidebar({ onCreate, dark, onToggleDark, user, roleLabel 
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setMenuChatId(menuOpen ? null : chat.id) }}
-                className="absolute top-3 right-3 p-1 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition opacity-60 hover:opacity-100"
+                className="absolute top-2 right-3 p-1 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition opacity-60 hover:opacity-100"
               >
                 <FiMoreVertical size={14} />
               </button>
@@ -178,17 +184,6 @@ export default function Sidebar({ onCreate, dark, onToggleDark, user, roleLabel 
       </div>
       {/* Close menu on outside click */}
       {menuChatId && <div className="fixed inset-0 z-40" onClick={() => setMenuChatId(null)} />}
-
-      {/* New chat button — always visible at bottom right, never scrolls away */}
-      <div className="sticky bottom-0 p-3 bg-white/80 dark:bg-slate-900/80 backdrop-blur border-t border-white/40 flex justify-end">
-        <button
-          onClick={onCreate}
-          className="flex items-center gap-2 px-4 py-2 bg-wa-600 hover:bg-wa-700 active:bg-wa-800 text-white rounded-full shadow-md transition text-sm font-medium"
-        >
-          <FiPlus size={18} />
-          <span>New Chat</span>
-        </button>
-      </div>
     </aside>
   )
 }

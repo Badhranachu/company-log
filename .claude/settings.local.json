@@ -23,7 +23,8 @@
       "Bash(python generate-icons.py)",
       "Bash(npm install *)",
       "Bash(findstr \"vite-plugin-pwa\")",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(venv\\\\Scripts\\\\python manage.py makemigrations accounts)"
     ]
   }
 }

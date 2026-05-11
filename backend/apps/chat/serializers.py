@@ -4,8 +4,10 @@ from .models import ChatBox, ChatBoxMember, Message
 
 class ChatBoxSerializer(serializers.ModelSerializer):
     created_by_name = serializers.CharField(source='created_by.name', read_only=True)
+    title = serializers.SerializerMethodField()
     group_avatar_url = serializers.SerializerMethodField()
     group_banner_url = serializers.SerializerMethodField()
+    dm_avatar_url = serializers.SerializerMethodField()
     last_message_preview = serializers.SerializerMethodField()
     last_message_at = serializers.SerializerMethodField()
     unread_count = serializers.SerializerMethodField()
@@ -16,6 +18,32 @@ class ChatBoxSerializer(serializers.ModelSerializer):
         model = ChatBox
         fields = '__all__'
         read_only_fields = ['created_by', 'created_at', 'updated_at', 'is_deleted', 'deleted_at']
+
+    def get_title(self, obj):
+        if obj.chat_type != 'direct':
+            return obj.title
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        if not user or user.is_anonymous:
+            return obj.title
+        other = obj.memberships.exclude(user=user).select_related('user').first()
+        if other:
+            return other.user.name
+        if obj.created_by_id != user.id:
+            return obj.created_by.name
+        return obj.title
+
+    def get_dm_avatar_url(self, obj):
+        if obj.chat_type != 'direct':
+            return None
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        if not user or user.is_anonymous:
+            return None
+        other = obj.memberships.exclude(user=user).select_related('user').first()
+        if not other or not other.user.profile_picture:
+            return None
+        return request.build_absolute_uri(other.user.profile_picture.url) if request else other.user.profile_picture.url
 
     def get_group_avatar_url(self, obj):
         request = self.context.get("request")
@@ -30,14 +58,19 @@ class ChatBoxSerializer(serializers.ModelSerializer):
         return request.build_absolute_uri(obj.group_banner.url) if request else obj.group_banner.url
 
     def get_last_message_preview(self, obj):
-        msg = obj.messages.order_by("-created_at").first()
+        msg = obj.messages.select_related('sender').order_by("-created_at").first()
         if not msg:
             return ""
         if msg.deleted_for_everyone:
             return "This message was deleted"
-        if msg.message:
-            return msg.message[:80]
-        return f"[{msg.attachment_type}]"
+        request = self.context.get("request")
+        current_user = getattr(request, "user", None)
+        if msg.sender_id and current_user and not current_user.is_anonymous:
+            prefix = "You" if msg.sender_id == current_user.id else msg.sender.name
+        else:
+            prefix = ""
+        content = msg.message[:80] if msg.message else f"[{msg.attachment_type}]"
+        return f"{prefix}: {content}" if prefix else content
 
     def get_last_message_at(self, obj):
         msg = obj.messages.order_by("-created_at").first()

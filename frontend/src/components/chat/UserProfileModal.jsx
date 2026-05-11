@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { FiMessageCircle, FiPhone, FiBriefcase, FiX } from 'react-icons/fi'
+import { FiMessageCircle, FiPhone, FiBriefcase, FiX, FiMail, FiUser } from 'react-icons/fi'
 import api from '../../lib/api'
 import { useChatStore } from '../../store/chatStore'
 import { useAuthStore } from '../../store/authStore'
@@ -61,17 +61,25 @@ export default function UserProfileModal({ userId, userName, onClose }) {
           {/* Info */}
           <div className="pt-12 pb-2 px-5 text-center">
             <h2 className="text-lg font-bold">{user?.name || userName}</h2>
-            {user?.role && (
-              <span className="inline-block mt-1 text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 font-medium capitalize">
-                {user.role}
-              </span>
-            )}
+
             {user?.bio && <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">{user.bio}</p>}
             {user?.status_message && <p className="text-xs italic text-slate-400 mt-1">"{user.status_message}"</p>}
           </div>
 
           {/* Details */}
           <div className="px-5 pb-4 space-y-2">
+            {user?.email && (
+              <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                <FiMail size={14} className="opacity-60 shrink-0" />
+                <span className="truncate">{user.email}</span>
+              </div>
+            )}
+            {user?.username_alias && (
+              <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                <FiUser size={14} className="opacity-60 shrink-0" />
+                <span>@{user.username_alias}</span>
+              </div>
+            )}
             {user?.department && (
               <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
                 <FiBriefcase size={14} className="opacity-60 shrink-0" />

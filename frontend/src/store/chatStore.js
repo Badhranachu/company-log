@@ -90,27 +90,30 @@ export const useChatStore = create((set, get) => ({
           return {
           messages: next,
           // Update sidebar: preview + time + unread count for incoming messages
-          chatboxes: s.chatboxes.map((c) =>
-            c.id === chatboxId
-              ? {
-                  ...c,
-                  last_message_preview: incoming.attachment_type
-                    ? `[${incoming.attachment_type}]`
-                    : (incoming.message || '').slice(0, 80),
-                  last_message_at: incoming.created_at,
-                  unread_count: (isOwn || get().activeChat?.id === chatboxId)
-                    ? 0
-                    : (c.unread_count || 0) + 1,
-                }
-              : c
-          ),
+          chatboxes: s.chatboxes.map((c) => {
+            if (c.id !== chatboxId) return c
+            const prefix = isOwn ? 'You' : (incoming.sender_name || '')
+            const content = incoming.message ? incoming.message.slice(0, 80) : `[${incoming.attachment_type}]`
+            return {
+              ...c,
+              last_message_preview: prefix ? `${prefix}: ${content}` : content,
+              last_message_at: incoming.created_at,
+              unread_count: (isOwn || get().activeChat?.id === chatboxId) ? 0 : (c.unread_count || 0) + 1,
+            }
+          }),
           }
         })
       }
       if (packet.type === 'typing') {
-        const id = packet.payload.user_id
-        set((s) => ({ typingUsers: Array.from(new Set([...s.typingUsers, id])) }))
-        setTimeout(() => set((s) => ({ typingUsers: s.typingUsers.filter((x) => x !== id) })), 1200)
+        const { user_id, user_name } = packet.payload
+        const selfId = JSON.parse(sessionStorage.getItem('user') || 'null')?.id
+        if (user_id === selfId) return
+        set((s) => ({ typingUsers: [...s.typingUsers.filter((x) => x.id !== user_id), { id: user_id, name: user_name }] }))
+        setTimeout(() => set((s) => ({ typingUsers: s.typingUsers.filter((x) => x.id !== user_id) })), 1200)
+      }
+      if (packet.type === 'tick') {
+        const { message_id, is_ticked } = packet.payload
+        set((s) => ({ messages: s.messages.map((m) => m.id === message_id ? { ...m, is_ticked } : m) }))
       }
       if (packet.type === 'presence') {
         const p = packet.payload
@@ -143,13 +146,14 @@ export const useChatStore = create((set, get) => ({
     ns.onmessage = (event) => {
       const packet = JSON.parse(event.data)
       if (packet.type === 'new_message') {
-        const { chatbox_id, preview, last_message_at } = packet
+        const { chatbox_id, preview, last_message_at, sender_name } = packet
+        const formattedPreview = sender_name ? `${sender_name}: ${preview}` : preview
         set((s) => ({
           chatboxes: s.chatboxes.map((c) =>
             c.id === chatbox_id
               ? {
                   ...c,
-                  last_message_preview: preview,
+                  last_message_preview: formattedPreview,
                   last_message_at,
                   unread_count: s.activeChat?.id === chatbox_id ? 0 : (c.unread_count || 0) + 1,
                 }
@@ -306,8 +310,7 @@ export const useChatStore = create((set, get) => ({
     await get().fetchChatboxes()
   },
   async toggleTick(messageId) {
-    const { data } = await api.post(`/messages/${messageId}/toggle_tick/`)
-    set((s) => ({ messages: s.messages.map((m) => m.id === messageId ? { ...m, is_ticked: data.is_ticked } : m) }))
+    await api.post(`/messages/${messageId}/toggle_tick/`)
   },
   async togglePin(messageId) {
     const { data } = await api.post(`/messages/${messageId}/toggle_pin/`)

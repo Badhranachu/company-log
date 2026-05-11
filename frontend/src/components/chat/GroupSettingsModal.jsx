@@ -6,7 +6,7 @@ import { useAuthStore } from '../../store/authStore'
 import api from '../../lib/api'
 import { FiArrowLeft, FiX, FiUserCheck, FiMoreVertical, FiShield, FiShieldOff, FiUserMinus } from 'react-icons/fi'
 
-function MemberMenu({ member, chatOwnerId, currentUserId, currentUserRole, currentMembership, chatId, onRefresh }) {
+function MemberMenu({ member, chatOwnerId, currentUserId, chatId, onRefresh }) {
   const [open, setOpen] = useState(false)
   const ref = useRef(null)
 
@@ -18,27 +18,10 @@ function MemberMenu({ member, chatOwnerId, currentUserId, currentUserRole, curre
 
   const isCurrentUser = member.id === currentUserId
   const isGroupOwner = member.id === chatOwnerId
-  const isAdmin = !!member.is_admin
-  const canManage = currentUserRole === 'owner' || currentUserId === chatOwnerId || (currentMembership?.is_admin && !isGroupOwner)
+  const canManage = currentUserId === chatOwnerId
 
-  if (!canManage || isCurrentUser) return null
+  if (!canManage || isCurrentUser || isGroupOwner) return null
 
-  const promote = async () => {
-    setOpen(false)
-    try {
-      await api.post(`/chatboxes/${chatId}/promote_admin/`, { member_id: member.id })
-      toast.success(`${member.name} promoted to admin`)
-      onRefresh()
-    } catch (e) { toast.error(e?.response?.data?.detail || 'Failed') }
-  }
-  const demote = async () => {
-    setOpen(false)
-    try {
-      await api.post(`/chatboxes/${chatId}/demote_admin/`, { member_id: member.id })
-      toast.success(`${member.name} removed as admin`)
-      onRefresh()
-    } catch (e) { toast.error(e?.response?.data?.detail || 'Failed') }
-  }
   const remove = async () => {
     setOpen(false)
     if (!window.confirm(`Remove ${member.name} from the group?`)) return
@@ -66,21 +49,9 @@ function MemberMenu({ member, chatOwnerId, currentUserId, currentUserRole, curre
             exit={{ opacity: 0, scale: 0.95, y: -4 }}
             className="absolute right-0 top-8 z-50 w-44 rounded-xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 shadow-xl overflow-hidden"
           >
-            {!isAdmin && (
-              <button type="button" onClick={promote} className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700">
-                <FiShield size={13} className="text-wa-600" /> Promote to admin
-              </button>
-            )}
-            {isAdmin && !isGroupOwner && (
-              <button type="button" onClick={demote} className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700">
-                <FiShieldOff size={13} className="text-amber-500" /> Remove as admin
-              </button>
-            )}
-            {!isGroupOwner && (
-              <button type="button" onClick={remove} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20">
-                <FiUserMinus size={13} /> Remove from group
-              </button>
-            )}
+            <button type="button" onClick={remove} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20">
+              <FiUserMinus size={13} /> Remove from group
+            </button>
           </motion.div>
         )}
       </AnimatePresence>
@@ -197,8 +168,7 @@ export default function GroupSettingsModal({ open, onClose, chat, canManage }) {
   }
 
   const roleBadge = (m) => {
-    if (m.id === chat.created_by) return <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-semibold">Owner</span>
-    if (m.is_admin) return <span className="text-[9px] px-1.5 py-0.5 rounded bg-wa-100 text-wa-700 font-semibold">Admin</span>
+    if (m.id === chat.created_by) return <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-semibold">Group Owner</span>
     return null
   }
 
@@ -275,8 +245,6 @@ export default function GroupSettingsModal({ open, onClose, chat, canManage }) {
                     member={m}
                     chatOwnerId={chat.created_by}
                     currentUserId={currentUser?.id}
-                    currentUserRole={currentUser?.role}
-                    currentMembership={currentMembership}
                     chatId={chat.id}
                     onRefresh={loadMembers}
                   />

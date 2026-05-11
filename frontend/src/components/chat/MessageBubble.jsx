@@ -60,7 +60,7 @@ export default function MessageBubble({ msg, mine, userId, memberCount, isGroup,
   return (
     <>
     <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} className={`max-w-[75%] ${mine ? 'ml-auto' : ''}`}>
-      {!mine && msg.sender_name && (
+      {!mine && msg.sender_name && isGroup && (
         <button
           onClick={() => setProfileId(msg.sender)}
           className="text-[11px] font-semibold text-wa-600 mb-0.5 px-1 hover:underline"

@@ -75,9 +75,9 @@ export default function ChatWindow({ onBack, dark, onToggleDark }) {
       <div className="flex-1 grid place-items-center text-slate-400 text-sm">Select a chat to start</div>
     </div>
   )
-  const canManageGroup = user?.role === 'owner' || activeChat.created_by === user?.id
+  const canManageGroup = activeChat.created_by === user?.id
   const memberCount = activeChat.member_count || 0
-  const avatarSrc = activeChat.group_avatar_url || `https://placehold.co/40x40/4ade80/ffffff?text=${encodeURIComponent((activeChat.title || 'G').slice(0, 1).toUpperCase())}`
+  const avatarSrc = activeChat.dm_avatar_url || activeChat.group_avatar_url || `https://placehold.co/40x40/4ade80/ffffff?text=${encodeURIComponent((activeChat.title || 'G').slice(0, 1).toUpperCase())}`
 
   const submit = (e) => {
     e.preventDefault()
@@ -248,7 +248,7 @@ export default function ChatWindow({ onBack, dark, onToggleDark }) {
         )}
       </div>
       <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="px-4 py-2">
-        {typingUsers.length > 0 && <p className="text-xs mb-1 text-wa-700">Someone is typing...</p>}
+        {typingUsers.length > 0 && <p className="text-xs mb-1 text-wa-700">{typingUsers.map((t) => t.name).join(', ')} {typingUsers.length === 1 ? 'is' : 'are'} typing...</p>}
         {replyTo && <p className="text-xs mb-1">Replying to message #{replyTo} <button className="underline" onClick={() => setReplyTo(null)}>cancel</button></p>}
         {uploadProgress > 0 && <div className="h-1 bg-slate-200 rounded-full mb-2"><div className="h-1 bg-wa-600 rounded-full" style={{ width: `${uploadProgress}%` }} /></div>}
         <form onSubmit={submit} className="bg-white/90 dark:bg-slate-900 rounded-2xl p-2 shadow-glass flex items-center gap-2 relative">

@@ -5,9 +5,9 @@ import { useChatStore } from '../../store/chatStore'
 
 const navItems = [
   { to: '/', label: 'Chats', icon: FiMessageSquare },
-  { to: '/add-user', label: 'Add User', icon: FiPlusCircle, ownerOnly: true },
-  { to: '/users', label: 'Users List', icon: FiUsers, ownerOnly: true },
-  { to: '/manage-groups', label: 'Manage Groups', icon: FiTrash2, ownerOnly: true },
+  { to: '/add-user', label: 'Add User', shortLabel: 'Add User', icon: FiPlusCircle, ownerOnly: true },
+  { to: '/users', label: 'Users List', shortLabel: 'Users', icon: FiUsers, ownerOnly: true },
+  { to: '/manage-groups', label: 'Manage Groups', shortLabel: 'Groups', icon: FiTrash2, ownerOnly: true },
   { to: '/profile', label: 'Profile', icon: FiUser },
   { to: '/settings', label: 'Settings', icon: FiSettings },
 ]
@@ -62,7 +62,7 @@ export default function AppShell() {
       </main>
 
       {/* Mobile bottom tab bar — hidden when inside a chat */}
-      <nav className={`md:hidden fixed bottom-0 inset-x-0 bg-white dark:bg-slate-900 border-t flex z-40 transition-transform duration-200 ${hideBottomNav ? 'translate-y-full' : 'translate-y-0'}`}>
+      <nav className={`md:hidden fixed bottom-0 inset-x-0 bg-white dark:bg-slate-900 border-t flex items-stretch z-40 transition-transform duration-200 ${hideBottomNav ? 'translate-y-full' : 'translate-y-0'}`}>
         {visibleItems.map((item) => {
           const Icon = item.icon
           return (
@@ -71,17 +71,17 @@ export default function AppShell() {
               to={item.to}
               end={item.to === '/'}
               className={({ isActive }) =>
-                `flex-1 flex flex-col items-center justify-center py-2 gap-0.5 text-[10px] transition ${isActive ? 'text-wa-700' : 'text-slate-500 dark:text-slate-400'}`
+                `flex-1 flex flex-col items-center justify-center py-2 gap-0.5 text-[10px] whitespace-nowrap transition ${isActive ? 'text-wa-700' : 'text-slate-500 dark:text-slate-400'}`
               }
             >
               <Icon size={20} />
-              {item.label}
+              {item.shortLabel || item.label}
             </NavLink>
           )
         })}
         <button
           onClick={doLogout}
-          className="flex-1 flex flex-col items-center justify-center py-2 gap-0.5 text-[10px] text-slate-500 dark:text-slate-400"
+          className="flex-1 flex flex-col items-center justify-center py-2 gap-0.5 text-[10px] whitespace-nowrap text-slate-500 dark:text-slate-400"
         >
           <FiLogOut size={20} />
           Logout

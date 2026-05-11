@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { FiMoon, FiSun } from 'react-icons/fi'
 import Sidebar from '../components/chat/Sidebar'
 import ChatWindow from '../components/chat/ChatWindow'
@@ -24,8 +24,6 @@ export default function ChatPage() {
     localStorage.setItem('dark', dark ? '1' : '0')
   }, [dark])
 
-  const roleLabel = useMemo(() => user?.role === 'owner' ? 'Owner' : 'User', [user])
-
   return (
     <div className="h-[100dvh] md:h-screen flex bg-[#f0f2f5] dark:bg-slate-950 overflow-hidden">
 
@@ -36,7 +34,6 @@ export default function ChatPage() {
           dark={dark}
           onToggleDark={() => setDark((x) => !x)}
           user={user}
-          roleLabel={roleLabel}
         />
       </div>
 

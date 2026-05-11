@@ -1,26 +1,49 @@
 import random
 from rest_framework import decorators, permissions, response, status, viewsets
 from rest_framework_simplejwt.tokens import RefreshToken
-from django.core.cache import cache
 from django.core.mail import send_mail
 from django.conf import settings
 from django.utils import timezone
 from datetime import timedelta
-from .models import User
+from .models import OTPCode, User
 from .permissions import IsOwner
 from .serializers import PasswordResetSerializer, SuspendSerializer, UserCreateSerializer, UserSerializer
+
+OTP_TTL_MINUTES = 5
 
 
 def _send_otp(email: str, subject: str, purpose: str) -> str:
     otp = str(random.randint(100000, 999999))
     send_mail(
         subject,
-        f'Your OTP for {purpose} is: {otp}\n\nValid for 10 minutes. Do not share this code.',
+        f'Your OTP for {purpose} is: {otp}\n\nValid for {OTP_TTL_MINUTES} minutes. Do not share this code.',
         settings.DEFAULT_FROM_EMAIL,
         [email],
         fail_silently=False,
     )
     return otp
+
+
+def _create_otp(user, purpose: str, otp: str, new_email: str = '') -> OTPCode:
+    OTPCode.objects.filter(user=user, purpose=purpose).delete()
+    return OTPCode.objects.create(
+        user=user,
+        purpose=purpose,
+        otp=otp,
+        new_email=new_email,
+        expires_at=timezone.now() + timedelta(minutes=OTP_TTL_MINUTES),
+    )
+
+
+def _verify_otp(user, purpose: str, otp: str):
+    """Return the OTPCode if valid, or None."""
+    try:
+        record = OTPCode.objects.get(user=user, purpose=purpose)
+    except OTPCode.DoesNotExist:
+        return None
+    if not record.is_valid or record.otp != otp:
+        return None
+    return record
 
 
 class AuthViewSet(viewsets.ViewSet):
@@ -50,7 +73,6 @@ class AuthViewSet(viewsets.ViewSet):
 
     @decorators.action(detail=False, methods=['patch'], permission_classes=[permissions.IsAuthenticated])
     def update_profile(self, request):
-        # Email and password changes go through OTP endpoints — block them here
         data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
         data.pop('email', None)
         data.pop('password', None)
@@ -67,7 +89,7 @@ class AuthViewSet(viewsets.ViewSet):
             otp = _send_otp(user.email, 'Company Log — Password Change OTP', 'password change')
         except Exception:
             return response.Response({'detail': 'Failed to send OTP. Check email config.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        cache.set(f'otp_pwd_{user.id}', otp, timeout=300)
+        _create_otp(user, OTPCode.PURPOSE_PASSWORD, otp)
         return response.Response({'detail': f'OTP sent to {user.email}'})
 
     @decorators.action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated])
@@ -78,10 +100,10 @@ class AuthViewSet(viewsets.ViewSet):
             return response.Response({'detail': 'otp and new_password are required.'}, status=status.HTTP_400_BAD_REQUEST)
         if len(new_password) < 8:
             return response.Response({'detail': 'Password must be at least 8 characters.'}, status=status.HTTP_400_BAD_REQUEST)
-        cached = cache.get(f'otp_pwd_{request.user.id}')
-        if not cached or cached != otp:
+        record = _verify_otp(request.user, OTPCode.PURPOSE_PASSWORD, otp)
+        if not record:
             return response.Response({'detail': 'Invalid or expired OTP.'}, status=status.HTTP_400_BAD_REQUEST)
-        cache.delete(f'otp_pwd_{request.user.id}')
+        record.delete()
         request.user.set_password(new_password)
         request.user.save(update_fields=['password'])
         return response.Response({'detail': 'Password changed successfully.'})
@@ -97,7 +119,7 @@ class AuthViewSet(viewsets.ViewSet):
             otp = _send_otp(new_email, 'Company Log — Email Change OTP', 'email change')
         except Exception:
             return response.Response({'detail': 'Failed to send OTP. Check the email address.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        cache.set(f'otp_email_{request.user.id}', {'otp': otp, 'new_email': new_email}, timeout=300)
+        _create_otp(request.user, OTPCode.PURPOSE_EMAIL, otp, new_email=new_email)
         return response.Response({'detail': f'OTP sent to {new_email}'})
 
     @decorators.action(detail=False, methods=['post'], permission_classes=[permissions.IsAuthenticated])
@@ -105,17 +127,16 @@ class AuthViewSet(viewsets.ViewSet):
         otp = str(request.data.get('otp', '')).strip()
         if not otp:
             return response.Response({'detail': 'OTP is required.'}, status=status.HTTP_400_BAD_REQUEST)
-        cached = cache.get(f'otp_email_{request.user.id}')
-        if not cached or cached['otp'] != otp:
+        record = _verify_otp(request.user, OTPCode.PURPOSE_EMAIL, otp)
+        if not record:
             return response.Response({'detail': 'Invalid or expired OTP.'}, status=status.HTTP_400_BAD_REQUEST)
-        new_email = cached['new_email']
+        new_email = record.new_email
         if User.objects.filter(email=new_email).exclude(id=request.user.id).exists():
-            cache.delete(f'otp_email_{request.user.id}')
+            record.delete()
             return response.Response({'detail': 'Email already taken.'}, status=status.HTTP_400_BAD_REQUEST)
-        cache.delete(f'otp_email_{request.user.id}')
+        record.delete()
         request.user.email = new_email
-        request.user.username = new_email  # keep in sync with AbstractUser
-        request.user.save(update_fields=['email', 'username'])
+        request.user.save(update_fields=['email'])
         return response.Response({'detail': 'Email changed successfully.', 'email': new_email})
 
 

@@ -63,7 +63,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
         data = json.loads(text_data)
         event_type = data.get('type', 'message')
         if event_type == 'typing':
-            await self.channel_layer.group_send(self.group_name, {'type': 'typing', 'user_id': self.scope['user'].id})
+            user = self.scope['user']
+            await self.channel_layer.group_send(self.group_name, {'type': 'typing', 'user_id': user.id, 'user_name': user.name})
             return
         if event_type == 'seen':
             await self._mark_seen(data.get('message_id'))
@@ -101,6 +102,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     async def delete_event(self, event):
         await self.send(text_data=json.dumps({'type': 'delete', 'payload': {'message_id': event['message_id']}}))
+
+    async def tick_event(self, event):
+        await self.send(text_data=json.dumps({'type': 'tick', 'payload': {'message_id': event['message_id'], 'is_ticked': event['is_ticked']}}))
 
     @database_sync_to_async
     def _can_access_chatbox(self, user_id: int) -> bool:
