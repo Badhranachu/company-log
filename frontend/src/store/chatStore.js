@@ -149,16 +149,15 @@ export const useChatStore = create((set, get) => ({
         const { chatbox_id, preview, last_message_at, sender_name } = packet
         const formattedPreview = sender_name ? `${sender_name}: ${preview}` : preview
         set((s) => ({
-          chatboxes: s.chatboxes.map((c) =>
-            c.id === chatbox_id
-              ? {
-                  ...c,
-                  last_message_preview: formattedPreview,
-                  last_message_at,
-                  unread_count: s.activeChat?.id === chatbox_id ? 0 : (c.unread_count || 0) + 1,
-                }
-              : c
-          ),
+          chatboxes: s.chatboxes.map((c) => {
+            if (String(c.id) !== String(chatbox_id)) return c
+            return {
+              ...c,
+              last_message_preview: formattedPreview,
+              last_message_at,
+              unread_count: String(s.activeChat?.id) === String(chatbox_id) ? 0 : (c.unread_count || 0) + 1,
+            }
+          }),
         }))
       }
     }

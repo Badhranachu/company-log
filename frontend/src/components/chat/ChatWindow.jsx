@@ -42,28 +42,42 @@ export default function ChatWindow({ onBack, dark, onToggleDark }) {
   const cancelRef = useRef(false)
   const listRef = useRef(null)
   const bottomRef = useRef(null)
+  const prevMsgLenRef = useRef(0)
+
+  const isNearBottom = () => {
+    const list = listRef.current
+    if (!list) return true
+    return list.scrollHeight - list.scrollTop - list.clientHeight < 48
+  }
 
   // Instantly jump to bottom when switching chats
   useEffect(() => {
     setNewMsgCount(0)
+    prevMsgLenRef.current = 0
     bottomRef.current?.scrollIntoView({ behavior: 'instant' })
   }, [activeChat])
 
   // Track new messages; scroll if near bottom or own message
   useEffect(() => {
     if (messages.length === 0) return
-    const list = listRef.current
-    const isNearBottom = list ? list.scrollHeight - list.scrollTop - list.clientHeight < 120 : true
     const lastMsg = messages[messages.length - 1]
     const isOwn = lastMsg?.sender === user?.id || lastMsg?.optimistic
-    if (isNearBottom || isOwn) {
+    const newMessageArrived = messages.length > prevMsgLenRef.current
+    prevMsgLenRef.current = messages.length
+
+    if (!newMessageArrived) return
+
+    const nearBottom = isNearBottom()
+    if (nearBottom || isOwn) {
       setNewMsgCount(0)
       bottomRef.current?.scrollIntoView({ behavior: isOwn ? 'smooth' : 'instant' })
     } else {
       setNewMsgCount((n) => n + 1)
     }
-    if (lastMsg?.id && typeof lastMsg.id === 'number') markSeen(lastMsg.id)
-  }, [messages, markSeen, user?.id])
+    if (!isOwn && nearBottom && lastMsg?.id && typeof lastMsg.id === 'number') {
+      markSeen(lastMsg.id)
+    }
+  }, [messages, user?.id])
 
   if (!activeChat) return (
     <div className="flex-1 flex flex-col">
@@ -168,8 +182,9 @@ export default function ChatWindow({ onBack, dark, onToggleDark }) {
   }
 
   const onScroll = () => {
-    if (!listRef.current || !hasMore) return
-    if (listRef.current.scrollTop < 40) fetchMessages(page + 1)
+    if (!listRef.current) return
+    if (hasMore && listRef.current.scrollTop < 40) fetchMessages(page + 1)
+    if (isNearBottom()) setNewMsgCount(0)
   }
 
   return (
@@ -281,7 +296,14 @@ export default function ChatWindow({ onBack, dark, onToggleDark }) {
           )}
         </form>
       </motion.div>
-      <GroupSettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} chat={activeChat} canManage={canManageGroup} />
+      <GroupSettingsModal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        chat={activeChat}
+        canManage={canManageGroup}
+        mediaOnly={activeChat?.chat_type === 'direct'}
+      />
+      
       <GroupDetailsModal open={detailsOpen} onClose={() => setDetailsOpen(false)} chat={activeChat} />
       <PollModal open={pollOpen} onClose={() => setPollOpen(false)} onSubmit={sendPoll} />
     </div>

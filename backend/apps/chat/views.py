@@ -5,6 +5,7 @@ from rest_framework import decorators, permissions, response, status, viewsets
 from rest_framework.exceptions import PermissionDenied
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
+from django.db import models
 from .models import ChatBox, ChatBoxMember, Message
 from .permissions import ChatBoxPermission, MessagePermission
 from .serializers import ChatBoxMemberSerializer, ChatBoxSerializer, MessageSerializer, MessageUpdateSerializer
@@ -293,6 +294,7 @@ class MessageViewSet(viewsets.ModelViewSet):
             mime = uploaded_file.content_type if uploaded_file else ''
             message.attachment_type = _infer_attachment_type(message.attachment.name, mime)
             message.save(update_fields=['attachment_type'])
+        _fanout_new_message_events(chatbox, message, user)
 
     def perform_update(self, serializer):
         message = serializer.instance
@@ -374,3 +376,31 @@ def _infer_attachment_type(filename: str, mime: str = '') -> str:
     if ext in ['zip', 'rar', '7z']:
         return Message.ATTACH_ARCHIVE
     return Message.ATTACH_OTHER
+
+
+def _fanout_new_message_events(chatbox: ChatBox, message: Message, sender: User):
+    """
+    Keep unread counters + notification socket updates in sync for REST-created messages
+    (WS messages already do this in the consumer path).
+    """
+    other_members = ChatBoxMember.objects.filter(chatbox=chatbox).exclude(user=sender)
+    other_members.update(unread_count=models.F("unread_count") + 1)
+    member_ids = list(other_members.values_list("user_id", flat=True))
+    if chatbox.created_by_id and chatbox.created_by_id != sender.id and chatbox.created_by_id not in member_ids:
+        member_ids.append(chatbox.created_by_id)
+
+    preview_raw = f"[{message.attachment_type}]" if message.attachment_type else (message.message or "")
+    preview = preview_raw[:80]
+    layer = get_channel_layer()
+    created_at = message.created_at.isoformat()
+    for uid in member_ids:
+        async_to_sync(layer.group_send)(
+            f"user_{uid}",
+            {
+                "type": "notify_new_message",
+                "chatbox_id": chatbox.id,
+                "preview": preview,
+                "last_message_at": created_at,
+                "sender_name": sender.name,
+            }
+        )

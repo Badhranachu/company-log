@@ -4,7 +4,6 @@ from .models import ChatBox, ChatBoxMember, Message
 
 class ChatBoxSerializer(serializers.ModelSerializer):
     created_by_name = serializers.CharField(source='created_by.name', read_only=True)
-    title = serializers.SerializerMethodField()
     group_avatar_url = serializers.SerializerMethodField()
     group_banner_url = serializers.SerializerMethodField()
     dm_avatar_url = serializers.SerializerMethodField()
@@ -19,19 +18,18 @@ class ChatBoxSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ['created_by', 'created_at', 'updated_at', 'is_deleted', 'deleted_at']
 
-    def get_title(self, obj):
-        if obj.chat_type != 'direct':
-            return obj.title
-        request = self.context.get('request')
-        user = getattr(request, 'user', None)
-        if not user or user.is_anonymous:
-            return obj.title
-        other = obj.memberships.exclude(user=user).select_related('user').first()
-        if other:
-            return other.user.name
-        if obj.created_by_id != user.id:
-            return obj.created_by.name
-        return obj.title
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if instance.chat_type == 'direct':
+            request = self.context.get('request')
+            user = getattr(request, 'user', None)
+            if user and not user.is_anonymous:
+                other = instance.memberships.exclude(user=user).select_related('user').first()
+                if other:
+                    data['title'] = other.user.name
+                elif instance.created_by_id != user.id:
+                    data['title'] = instance.created_by.name
+        return data
 
     def get_dm_avatar_url(self, obj):
         if obj.chat_type != 'direct':

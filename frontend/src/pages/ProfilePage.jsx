@@ -3,6 +3,7 @@ import toast from 'react-hot-toast'
 import api from '../lib/api'
 import { useAuthStore } from '../store/authStore'
 import PageActions from '../components/layout/PageActions'
+import { compressImage } from '../lib/compressImage'
 
 export default function ProfilePage() {
   const user = useAuthStore((s) => s.user)
@@ -56,14 +57,20 @@ export default function ProfilePage() {
           {bannerSrc && <img src={bannerSrc} alt="banner" className="h-full w-full object-cover" />}
           <label className="absolute top-3 right-3 text-xs px-3 py-1 rounded-full bg-black/40 text-white cursor-pointer hover:bg-black/60 transition">
             Change Banner
-            <input type="file" className="hidden" accept="image/*" onChange={(e) => setBanner(e.target.files?.[0] || null)} />
+            <input type="file" className="hidden" accept="image/*" onChange={async (e) => {
+              const f = e.target.files?.[0]
+              if (f) setBanner(await compressImage(f, { maxWidth: 1600, maxHeight: 520, quality: 0.8 }))
+            }} />
           </label>
           {/* Avatar */}
           <div className="absolute -bottom-10 left-5">
             <label className="cursor-pointer block relative group">
               <img src={avatarSrc} alt="avatar" className="h-20 w-20 rounded-full border-4 border-white object-cover shadow-lg" />
               <span className="absolute inset-0 rounded-full bg-black/30 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white text-xs font-medium">Change</span>
-              <input type="file" className="hidden" accept="image/*" onChange={(e) => setProfilePic(e.target.files?.[0] || null)} />
+              <input type="file" className="hidden" accept="image/*" onChange={async (e) => {
+                const f = e.target.files?.[0]
+                if (f) setProfilePic(await compressImage(f, { maxWidth: 512, maxHeight: 512, quality: 0.82 }))
+              }} />
             </label>
           </div>
         </div>
