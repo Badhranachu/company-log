@@ -13,6 +13,7 @@ export const useChatStore = create((set, get) => ({
   messages: [],
   activeChat: null,
   socket: null,
+  notificationSocket: null,
   typingUsers: [],
   presence: {},
   page: 1,
@@ -20,7 +21,11 @@ export const useChatStore = create((set, get) => ({
   uploadProgress: 0,
   socketStatus: 'disconnected',
   users: [],
-  clearActiveChat: () => set({ activeChat: null, messages: [], page: 1, hasMore: true }),
+  clearActiveChat: () => {
+    const old = get().socket
+    if (old) old.close()
+    set({ activeChat: null, messages: [], page: 1, hasMore: true, socket: null, socketStatus: 'disconnected' })
+  },
   async fetchChatboxes(q = '') {
     const { data } = await api.get('/chatboxes/', { params: { search: q } })
     set({ chatboxes: data.results || data })
@@ -32,7 +37,14 @@ export const useChatStore = create((set, get) => ({
     await get().fetchChatboxes()
   },
   async setActiveChat(chat) {
-    set({ activeChat: chat, messages: [], page: 1, hasMore: true })
+    // Clear unread badge immediately in the list
+    set((s) => ({
+      activeChat: chat,
+      messages: [],
+      page: 1,
+      hasMore: true,
+      chatboxes: s.chatboxes.map((c) => c.id === chat.id ? { ...c, unread_count: 0 } : c),
+    }))
     await get().fetchMessages(1)
     get().connectSocket(chat.id)
   },
@@ -55,9 +67,9 @@ export const useChatStore = create((set, get) => ({
     const socket = new WebSocket(wsUrl)
     socket.onopen = () => set({ socketStatus: 'connected' })
     socket.onclose = () => {
-      set({ socketStatus: 'disconnected' })
+      set((s) => s.socket === socket ? { socketStatus: 'disconnected' } : {})
       setTimeout(() => {
-        if (get().activeChat?.id === chatboxId) get().connectSocket(chatboxId)
+        if (get().activeChat?.id === chatboxId && get().socket === socket) get().connectSocket(chatboxId)
       }, 1500)
     }
     socket.onerror = () => set({ socketStatus: 'error' })
@@ -65,13 +77,35 @@ export const useChatStore = create((set, get) => ({
       const packet = JSON.parse(event.data)
       if (packet.type === 'message') {
         const incoming = packet.payload
-        set((s) => ({
-          messages: s.messages.some((m) => m.id === incoming.id)
-            ? s.messages
-            : s.messages.map((m) => (incoming.client_id && m.client_id === incoming.client_id ? { ...incoming } : m)).concat(
-                s.messages.some((m) => incoming.client_id && m.client_id === incoming.client_id) ? [] : [incoming]
-              )
-        }))
+        const currentUserId = JSON.parse(sessionStorage.getItem('user') || 'null')?.id
+        const isOwn = incoming.sender === currentUserId
+
+        // Update message list
+        set((s) => {
+          if (s.messages.some((m) => m.id === incoming.id)) return {}
+          const matchIdx = incoming.client_id ? s.messages.findIndex((m) => m.client_id === incoming.client_id && m.optimistic) : -1
+          const next = matchIdx >= 0
+            ? s.messages.map((m, i) => i === matchIdx ? incoming : m)
+            : [...s.messages, incoming]
+          return {
+          messages: next,
+          // Update sidebar: preview + time + unread count for incoming messages
+          chatboxes: s.chatboxes.map((c) =>
+            c.id === chatboxId
+              ? {
+                  ...c,
+                  last_message_preview: incoming.attachment_type
+                    ? `[${incoming.attachment_type}]`
+                    : (incoming.message || '').slice(0, 80),
+                  last_message_at: incoming.created_at,
+                  unread_count: (isOwn || get().activeChat?.id === chatboxId)
+                    ? 0
+                    : (c.unread_count || 0) + 1,
+                }
+              : c
+          ),
+          }
+        })
       }
       if (packet.type === 'typing') {
         const id = packet.payload.user_id
@@ -98,6 +132,38 @@ export const useChatStore = create((set, get) => ({
       }
     }
     set({ socket })
+  },
+  connectNotifications() {
+    const old = get().notificationSocket
+    if (old) old.close()
+    const token = sessionStorage.getItem('access')
+    if (!token) return
+    const wsUrl = resolveWsBase() + `/ws/notifications/?token=${token}`
+    const ns = new WebSocket(wsUrl)
+    ns.onmessage = (event) => {
+      const packet = JSON.parse(event.data)
+      if (packet.type === 'new_message') {
+        const { chatbox_id, preview, last_message_at } = packet
+        set((s) => ({
+          chatboxes: s.chatboxes.map((c) =>
+            c.id === chatbox_id
+              ? {
+                  ...c,
+                  last_message_preview: preview,
+                  last_message_at,
+                  unread_count: s.activeChat?.id === chatbox_id ? 0 : (c.unread_count || 0) + 1,
+                }
+              : c
+          ),
+        }))
+      }
+    }
+    ns.onclose = () => {
+      setTimeout(() => {
+        if (sessionStorage.getItem('access')) get().connectNotifications()
+      }, 3000)
+    }
+    set({ notificationSocket: ns })
   },
   sendTyping() {
     const socket = get().socket
@@ -126,7 +192,7 @@ export const useChatStore = create((set, get) => ({
     if (socket?.readyState === 1) {
       socket.send(JSON.stringify({ type: 'message', message, reply_to: replyTo, client_id: clientId }))
       setTimeout(async () => {
-        const stillPending = get().messages.some((m) => m.client_id === clientId)
+        const stillPending = get().messages.some((m) => m.client_id === clientId && m.optimistic)
         if (!stillPending) return
         try {
           const { data } = await api.post('/messages/', { chatbox: active.id, message, reply_to: replyTo })
@@ -155,7 +221,7 @@ export const useChatStore = create((set, get) => ({
     const isVideo = file.type.startsWith('video/')
     const guessedType = file.type.startsWith('image/') ? 'image'
       : isVideo ? 'video'
-      : file.type.startsWith('audio/') ? 'other'
+      : file.type.startsWith('audio/') ? 'audio'
       : 'document'
 
     const optimistic = {

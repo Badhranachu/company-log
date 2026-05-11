@@ -9,7 +9,12 @@ CHUNK_SIZE = 1024 * 1024  # 1 MB
 
 def serve_media_range(request, path):
     """Serve media files with HTTP Range support (enables video seek/streaming)."""
-    full_path = os.path.join(settings.MEDIA_ROOT, path)
+    # Resolve both paths to their real absolute forms to prevent path traversal
+    media_root = os.path.realpath(settings.MEDIA_ROOT)
+    full_path = os.path.realpath(os.path.join(media_root, path))
+    # Reject anything that escapes MEDIA_ROOT
+    if not full_path.startswith(media_root + os.sep):
+        raise Http404
     if not os.path.exists(full_path) or not os.path.isfile(full_path):
         raise Http404
 

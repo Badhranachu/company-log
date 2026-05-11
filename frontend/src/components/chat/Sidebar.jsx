@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from 'react'
-import { FiBellOff, FiMapPin, FiMessageCircle, FiMoreVertical, FiPlus, FiSearch, FiUsers } from 'react-icons/fi'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { FiBellOff, FiMapPin, FiMessageCircle, FiMoon, FiMoreVertical, FiPlus, FiSearch, FiSun, FiUsers } from 'react-icons/fi'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useChatStore } from '../../store/chatStore'
 import toast from 'react-hot-toast'
@@ -36,11 +36,26 @@ function ChatContextMenu({ chat, onClose }) {
   )
 }
 
-export default function Sidebar({ onCreate }) {
+export default function Sidebar({ onCreate, dark, onToggleDark, user, roleLabel }) {
   const [search, setSearch] = useState('')
   const [menuChatId, setMenuChatId] = useState(null)
   const chatboxes = useChatStore((s) => s.chatboxes)
   const setActiveChat = useChatStore((s) => s.setActiveChat)
+
+  const formatTime = (dateStr) => {
+    if (!dateStr) return ''
+    const date = new Date(dateStr)
+    const now = new Date()
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const yesterdayStart = new Date(todayStart)
+    yesterdayStart.setDate(yesterdayStart.getDate() - 1)
+    const msgDay = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+    if (msgDay.getTime() === todayStart.getTime())
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    if (msgDay.getTime() === yesterdayStart.getTime())
+      return 'Yesterday'
+    return date.toLocaleDateString([], { day: '2-digit', month: '2-digit', year: '2-digit' })
+  }
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase()
@@ -50,8 +65,24 @@ export default function Sidebar({ onCreate }) {
   }, [chatboxes, search])
 
   return (
-    <aside className="w-full max-w-sm border-r border-white/40 bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl flex flex-col relative">
-      <div className="p-4 border-b border-white/40">
+    <aside className="w-full h-full md:max-w-sm border-r border-white/40 bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl flex flex-col overflow-x-hidden">
+      <div className="p-3 border-b border-white/40 space-y-2">
+        {/* User info + dark mode toggle */}
+        <div className="flex items-center justify-between">
+          {user && (
+            <div className="min-w-0">
+              <p className="font-semibold text-sm truncate">{user.name}</p>
+              <p className="text-xs opacity-50">{roleLabel}</p>
+            </div>
+          )}
+          <button
+            onClick={onToggleDark}
+            className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition shrink-0"
+            title={dark ? 'Day mode' : 'Night mode'}
+          >
+            {dark ? <FiSun size={16} /> : <FiMoon size={16} />}
+          </button>
+        </div>
         <div className="rounded-xl px-3 py-2 bg-slate-100/90 dark:bg-slate-800 flex items-center gap-2">
           <FiSearch />
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search chat boxes" className="bg-transparent outline-none w-full" />
@@ -65,7 +96,6 @@ export default function Sidebar({ onCreate }) {
           return (
             <motion.div
               key={chat.id}
-              whileHover={{ x: 3 }}
               className="relative border-b border-white/40"
             >
               <button
@@ -93,12 +123,17 @@ export default function Sidebar({ onCreate }) {
                       <p className="text-xs opacity-70 line-clamp-1">{chat.last_message_preview || chat.description}</p>
                     </div>
                   </div>
-                  <div className="text-right shrink-0">
-                    {chat.last_message_at && <p className="text-[10px] opacity-60">{new Date(chat.last_message_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>}
-                    <div className="flex justify-end items-center gap-1 mt-1">
-                      {chat.is_starred && <span className="text-amber-500">★</span>}
-                      {chat.unread_count > 0 && <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-wa-600 text-white">{chat.unread_count}</span>}
-                      {chat.is_muted && <FiBellOff className="text-xs opacity-60" />}
+                  <div className="text-right shrink-0 flex flex-col items-end gap-1">
+                    {chat.last_message_at && (
+                      <p className="text-[11px] opacity-60 whitespace-nowrap">{formatTime(chat.last_message_at)}</p>
+                    )}
+                    <div className="flex items-center gap-1">
+                      {chat.is_muted && <FiBellOff size={11} className="opacity-50" />}
+                      {chat.unread_count > 0 && (
+                        <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-wa-600 text-white text-[11px] font-semibold flex items-center justify-center">
+                          {chat.unread_count > 99 ? '99+' : chat.unread_count}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -123,7 +158,17 @@ export default function Sidebar({ onCreate }) {
       </div>
       {/* Close menu on outside click */}
       {menuChatId && <div className="fixed inset-0 z-40" onClick={() => setMenuChatId(null)} />}
-      <button onClick={onCreate} className="absolute bottom-6 right-6 bg-wa-600 hover:bg-wa-700 text-white rounded-full p-4 shadow-lg"><FiPlus size={20} /></button>
+
+      {/* New chat button — always visible at bottom right, never scrolls away */}
+      <div className="sticky bottom-0 p-3 bg-white/80 dark:bg-slate-900/80 backdrop-blur border-t border-white/40 flex justify-end">
+        <button
+          onClick={onCreate}
+          className="flex items-center gap-2 px-4 py-2 bg-wa-600 hover:bg-wa-700 active:bg-wa-800 text-white rounded-full shadow-md transition text-sm font-medium"
+        >
+          <FiPlus size={18} />
+          <span>New Chat</span>
+        </button>
+      </div>
     </aside>
   )
 }

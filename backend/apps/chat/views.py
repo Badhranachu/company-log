@@ -209,11 +209,32 @@ class MessageViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         chatbox_id = self.request.query_params.get('chatbox')
         user = self.request.user
+
+        # Build the set of chatbox IDs this user may access
+        if user.role == 'owner':
+            accessible_ids = None  # owner sees all
+        else:
+            accessible_ids = set(
+                ChatBox.objects.filter(
+                    Q(created_by=user) | Q(memberships__user=user)
+                ).values_list('id', flat=True)
+            )
+
         qs = Message.objects.select_related('sender', 'chatbox', 'reply_to').prefetch_related('seen_by')
+
         if chatbox_id:
-            qs = qs.filter(chatbox_id=chatbox_id)
-        qs = qs.exclude(hidden_by=user)
-        return qs.order_by('-created_at')
+            try:
+                chatbox_id_int = int(chatbox_id)
+            except (ValueError, TypeError):
+                return Message.objects.none()
+            # Deny access if user is not a member of the requested chatbox
+            if accessible_ids is not None and chatbox_id_int not in accessible_ids:
+                return Message.objects.none()
+            qs = qs.filter(chatbox_id=chatbox_id_int)
+        elif accessible_ids is not None:
+            qs = qs.filter(chatbox_id__in=accessible_ids)
+
+        return qs.exclude(hidden_by=user).order_by('-created_at')
 
     def get_serializer_class(self):
         if self.action in ['update', 'partial_update']:
@@ -230,7 +251,9 @@ class MessageViewSet(viewsets.ModelViewSet):
             raise PermissionDenied('This chat box is view-only.')
         message = serializer.save(sender=user)
         if message.attachment:
-            message.attachment_type = _infer_attachment_type(message.attachment.name)
+            uploaded_file = self.request.FILES.get('attachment')
+            mime = uploaded_file.content_type if uploaded_file else ''
+            message.attachment_type = _infer_attachment_type(message.attachment.name, mime)
             message.save(update_fields=['attachment_type'])
 
     def perform_update(self, serializer):
@@ -294,11 +317,13 @@ def _post_system_message(chatbox, text: str):
     return msg
 
 
-def _infer_attachment_type(filename: str) -> str:
+def _infer_attachment_type(filename: str, mime: str = '') -> str:
     ext = filename.lower().split('.')[-1] if '.' in filename else ''
     if ext in ['jpg', 'jpeg', 'png', 'gif', 'webp']:
         return Message.ATTACH_IMAGE
-    if ext in ['mp4', 'webm', 'mov']:
+    if mime.startswith('audio/') or ext in ['mp3', 'ogg', 'wav', 'm4a']:
+        return Message.ATTACH_AUDIO
+    if ext in ['mp4', 'webm', 'mov'] or mime.startswith('video/'):
         return Message.ATTACH_VIDEO
     if ext in ['pdf']:
         return Message.ATTACH_PDF

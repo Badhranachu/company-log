@@ -6,7 +6,13 @@ from dotenv import load_dotenv
 load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "unsafe-dev-key")
+def _require_env(name: str, default: str = "") -> str:
+    val = os.getenv(name, default)
+    if not val:
+        raise RuntimeError(f"Required environment variable '{name}' is not set.")
+    return val
+
+SECRET_KEY = _require_env("DJANGO_SECRET_KEY")
 DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() == "true"
 ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "*").split(",")
 
@@ -111,8 +117,12 @@ SIMPLE_JWT = {
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
-CORS_ALLOW_ALL_ORIGINS = os.getenv("CORS_ALLOW_ALL", "True").lower() == "true"
-CORS_ALLOW_CREDENTIALS = True
+_cors_allow_all = os.getenv("CORS_ALLOW_ALL", "False").lower() == "true"
+CORS_ALLOW_ALL_ORIGINS = _cors_allow_all
+# Only allow credentials when specific origins are listed, not with wildcard
+_cors_origins = os.getenv("CORS_ALLOWED_ORIGINS", "")
+CORS_ALLOWED_ORIGINS = [o.strip() for o in _cors_origins.split(",") if o.strip()]
+CORS_ALLOW_CREDENTIALS = not _cors_allow_all and bool(CORS_ALLOWED_ORIGINS)
 
 CHANNEL_LAYERS = {
     "default": {

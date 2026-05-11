@@ -17,7 +17,7 @@ export default function UsersListPage() {
   const [tab, setTab] = useState('active')
   const [selected, setSelected] = useState(null)
   const [newPassword, setNewPassword] = useState('')
-  const [suspendMinutes, setSuspendMinutes] = useState(60)
+  const [suspendMinutes, setSuspendMinutes] = useState(1)
 
   const load = async (search = '') => {
     const { data } = await api.get('/users/', { params: { search, page_size: 200 } })
@@ -78,7 +78,7 @@ export default function UsersListPage() {
             {filtered.map((u) => (
               <button key={u.id} onClick={() => setSelected(u)} className={`w-full text-left rounded-xl border px-3 py-2 ${selected?.id === u.id ? 'border-wa-600 bg-wa-50 dark:bg-slate-800' : ''}`}>
                 <p className="font-semibold">{u.name}</p>
-                <p className="text-xs opacity-70">{u.email} • {u.role}</p>
+                <p className="text-xs opacity-70">{u.email} ï¿½ {u.role}</p>
                 <p className="text-[11px] opacity-60">{u.is_banned ? 'Banned' : u.is_suspended ? `Suspended until ${new Date(u.suspended_until).toLocaleString()}` : 'Active'}</p>
               </button>
             ))}
@@ -104,18 +104,46 @@ export default function UsersListPage() {
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <p className="text-xs font-medium">Suspend user (time period)</p>
-                <div className="flex flex-wrap gap-2">
-                  <input type="number" min={1} value={suspendMinutes} onChange={(e) => setSuspendMinutes(Number(e.target.value))} className="w-32 rounded-xl border px-3 py-2 bg-transparent" />
-                  <button onClick={() => act(() => api.post(`/users/${selected.id}/suspend/`, { minutes: suspendMinutes }), 'User suspended')} className="px-3 py-2 rounded-xl bg-slate-700 text-white">Suspend</button>
-                  <button onClick={() => act(() => api.post(`/users/${selected.id}/unsuspend/`), 'User unsuspended')} className="px-3 py-2 rounded-xl bg-emerald-600 text-white">Unsuspend</button>
+              {/* Suspend â€” only show if not already banned */}
+              {!selected.is_banned && (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium">Suspend user</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-1 rounded-xl border px-3 py-2 bg-transparent">
+                      <input
+                        type="number"
+                        min={1}
+                        value={suspendMinutes}
+                        onChange={(e) => setSuspendMinutes(Number(e.target.value))}
+                        className="w-16 bg-transparent outline-none"
+                      />
+                      <span className="text-xs opacity-60">days</span>
+                    </div>
+                    <button
+                      onClick={() => act(() => api.post(`/users/${selected.id}/suspend/`, { minutes: suspendMinutes * 24 * 60 }), 'User suspended')}
+                      className="px-3 py-2 rounded-xl bg-slate-700 text-white"
+                    >
+                      Suspend
+                    </button>
+                    {selected.is_suspended && (
+                      <button
+                        onClick={() => act(() => api.post(`/users/${selected.id}/unsuspend/`), 'User unsuspended')}
+                        className="px-3 py-2 rounded-xl bg-emerald-600 text-white"
+                      >
+                        Unsuspend
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="flex flex-wrap gap-2 pt-2">
-                <button onClick={() => act(() => api.post(`/users/${selected.id}/ban/`), 'User banned')} className="px-3 py-2 rounded-xl bg-rose-700 text-white">Ban lifetime</button>
-                <button onClick={() => act(() => api.post(`/users/${selected.id}/unban/`), 'User unbanned')} className="px-3 py-2 rounded-xl bg-indigo-600 text-white">Unban</button>
+                {!selected.is_banned && !selected.is_suspended && (
+                  <button onClick={() => act(() => api.post(`/users/${selected.id}/ban/`), 'User banned')} className="px-3 py-2 rounded-xl bg-rose-700 text-white">Ban lifetime</button>
+                )}
+                {selected.is_banned && (
+                  <button onClick={() => act(() => api.post(`/users/${selected.id}/unban/`), 'User unbanned')} className="px-3 py-2 rounded-xl bg-indigo-600 text-white">Unban</button>
+                )}
                 <button onClick={() => act(() => api.delete(`/users/${selected.id}/`), 'User deleted')} className="px-3 py-2 rounded-xl bg-rose-600 text-white">Delete</button>
               </div>
             </>

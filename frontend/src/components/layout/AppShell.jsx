@@ -1,6 +1,7 @@
 import { FiLogOut, FiMessageSquare, FiPlusCircle, FiSettings, FiUser, FiUsers } from 'react-icons/fi'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../store/authStore'
+import { useChatStore } from '../../store/chatStore'
 
 const navItems = [
   { to: '/', label: 'Chats', icon: FiMessageSquare },
@@ -14,6 +15,7 @@ export default function AppShell() {
   const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.logout)
   const navigate = useNavigate()
+  const activeChat = useChatStore((s) => s.activeChat)
 
   const doLogout = () => {
     logout()
@@ -21,9 +23,10 @@ export default function AppShell() {
   }
 
   const visibleItems = navItems.filter((item) => !item.ownerOnly || user?.role === 'owner')
+  const hideBottomNav = !!activeChat
 
   return (
-    <div className="min-h-screen bg-slate-100 dark:bg-slate-950 flex">
+    <div className="min-h-[100dvh] bg-slate-100 dark:bg-slate-950 flex">
       {/* Desktop sidebar */}
       <aside className="w-64 bg-white/90 dark:bg-slate-900 border-r backdrop-blur-xl p-4 hidden md:flex md:flex-col">
         <h1 className="text-xl font-semibold mb-6">Company Log</h1>
@@ -52,13 +55,13 @@ export default function AppShell() {
         </button>
       </aside>
 
-      {/* Main content — extra bottom padding on mobile for tab bar */}
-      <main className="flex-1 min-w-0 pb-16 md:pb-0">
+      {/* Main content */}
+      <main className={`flex-1 min-w-0 overflow-hidden ${hideBottomNav ? '' : 'pb-16'} md:pb-0`}>
         <Outlet />
       </main>
 
-      {/* Mobile bottom tab bar */}
-      <nav className="md:hidden fixed bottom-0 inset-x-0 bg-white dark:bg-slate-900 border-t flex z-40">
+      {/* Mobile bottom tab bar — hidden when inside a chat */}
+      <nav className={`md:hidden fixed bottom-0 inset-x-0 bg-white dark:bg-slate-900 border-t flex z-40 transition-transform duration-200 ${hideBottomNav ? 'translate-y-full' : 'translate-y-0'}`}>
         {visibleItems.map((item) => {
           const Icon = item.icon
           return (

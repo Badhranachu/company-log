@@ -1,4 +1,6 @@
 import json
+import time
+from collections import deque
 from django.utils import timezone
 from django.db import models
 from channels.db import database_sync_to_async
@@ -6,9 +8,14 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from .models import ChatBox, ChatBoxMember, Message
 from apps.accounts.models import User
 
+# Per-connection rate limit: max 20 messages per 10-second window
+_WS_RATE_LIMIT = 20
+_WS_RATE_WINDOW = 10  # seconds
+
 
 class ChatConsumer(AsyncWebsocketConsumer):
     async def connect(self):
+        self._msg_timestamps: deque = deque()
         self.chatbox_id = int(self.scope['url_route']['kwargs']['chatbox_id'])
         self.group_name = f'chat_{self.chatbox_id}'
         user = self.scope.get('user')
@@ -30,7 +37,29 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await self.channel_layer.group_send(self.group_name, {'type': 'presence', 'user_id': user.id, 'online': False})
         await self.channel_layer.group_discard(self.group_name, self.channel_name)
 
+    @database_sync_to_async
+    def _is_active_user(self, user_id: int) -> bool:
+        return User.objects.filter(id=user_id, is_active=True, is_banned=False).exists()
+
+    def _is_rate_limited(self) -> bool:
+        now = time.monotonic()
+        # Drop timestamps outside the window
+        while self._msg_timestamps and self._msg_timestamps[0] < now - _WS_RATE_WINDOW:
+            self._msg_timestamps.popleft()
+        if len(self._msg_timestamps) >= _WS_RATE_LIMIT:
+            return True
+        self._msg_timestamps.append(now)
+        return False
+
     async def receive(self, text_data):
+        if self._is_rate_limited():
+            await self.send(text_data=json.dumps({'type': 'error', 'detail': 'Rate limit exceeded'}))
+            return
+        # Re-check user status on every message (catches mid-session ban/suspend)
+        user = self.scope.get('user')
+        if not user or not await self._is_active_user(user.id):
+            await self.close(code=4001)
+            return
         data = json.loads(text_data)
         event_type = data.get('type', 'message')
         if event_type == 'typing':
@@ -41,9 +70,17 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await self.channel_layer.group_send(self.group_name, {'type': 'seen_event', 'message_id': data.get('message_id'), 'user_id': self.scope['user'].id})
             return
         if event_type == 'message':
-            message = await self._create_message(data)
+            message, member_ids = await self._create_message(data)
             if message:
                 await self.channel_layer.group_send(self.group_name, {'type': 'message_event', 'message': message})
+                preview = (f"[{message['attachment_type']}]" if message.get('attachment_type') else (message.get('message') or ''))[:80]
+                for uid in member_ids:
+                    await self.channel_layer.group_send(
+                        f'user_{uid}',
+                        {'type': 'notify_new_message', 'chatbox_id': self.chatbox_id,
+                         'preview': preview, 'last_message_at': message['created_at'],
+                         'sender_name': message['sender_name']}
+                    )
         if event_type == 'delete':
             message_id = data.get('message_id')
             ok = await self._delete_for_everyone(message_id)
@@ -80,16 +117,21 @@ class ChatConsumer(AsyncWebsocketConsumer):
         chatbox = ChatBox.objects.get(id=self.chatbox_id)
         membership = ChatBoxMember.objects.filter(chatbox=chatbox, user=user).first()
         if user.role != 'owner' and not membership and chatbox.created_by_id != user.id:
-            return None
+            return None, []
         if chatbox.visibility_type == ChatBox.VISIBILITY_VIEW_ONLY and user.role != 'owner' and chatbox.created_by_id != user.id:
-            return None
+            return None, []
         msg = Message.objects.create(
             chatbox=chatbox,
             sender=user,
             message=data.get('message', ''),
             reply_to_id=data.get('reply_to') or None,
         )
-        ChatBoxMember.objects.filter(chatbox=chatbox).exclude(user=user).update(unread_count=models.F("unread_count") + 1)
+        other_members = ChatBoxMember.objects.filter(chatbox=chatbox).exclude(user=user)
+        other_members.update(unread_count=models.F("unread_count") + 1)
+        member_ids = list(other_members.values_list('user_id', flat=True))
+        # Also notify the chatbox creator if they're not the sender and have no ChatBoxMember row
+        if chatbox.created_by_id and chatbox.created_by_id != user.id and chatbox.created_by_id not in member_ids:
+            member_ids.append(chatbox.created_by_id)
         return {
             'id': msg.id,
             'client_id': data.get('client_id'),
@@ -104,7 +146,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             'attachment_type': msg.attachment_type,
             'reply_to': msg.reply_to_id,
             'seen_by_ids': [],
-        }
+        }, member_ids
 
     @database_sync_to_async
     def _delete_for_everyone(self, message_id) -> bool:
@@ -140,3 +182,30 @@ class ChatConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def _set_presence(self, user_id: int, online: bool):
         User.objects.filter(id=user_id).update(is_online=online, last_seen_at=timezone.now())
+
+
+class NotificationConsumer(AsyncWebsocketConsumer):
+    async def connect(self):
+        user = self.scope.get('user')
+        if not user or user.is_anonymous:
+            await self.close(code=4001)
+            return
+        self.user_group = f'user_{user.id}'
+        await self.channel_layer.group_add(self.user_group, self.channel_name)
+        await self.accept()
+
+    async def disconnect(self, close_code):
+        if hasattr(self, 'user_group'):
+            await self.channel_layer.group_discard(self.user_group, self.channel_name)
+
+    async def receive(self, text_data):
+        pass
+
+    async def notify_new_message(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'new_message',
+            'chatbox_id': event['chatbox_id'],
+            'preview': event['preview'],
+            'last_message_at': event['last_message_at'],
+            'sender_name': event.get('sender_name', ''),
+        }))

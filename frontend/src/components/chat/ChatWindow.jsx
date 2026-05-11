@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { FiMic, FiPlus, FiSend, FiSettings, FiTrash2 } from 'react-icons/fi'
+import { FiArrowLeft, FiMic, FiMoon, FiPlus, FiSend, FiSettings, FiSun, FiTrash2 } from 'react-icons/fi'
 import { motion } from 'framer-motion'
 import { useAuthStore } from '../../store/authStore'
 import { useChatStore } from '../../store/chatStore'
@@ -9,7 +9,7 @@ import GroupSettingsModal from './GroupSettingsModal'
 import GroupDetailsModal from './GroupDetailsModal'
 import PollModal from './PollModal'
 
-export default function ChatWindow() {
+export default function ChatWindow({ onBack, dark, onToggleDark }) {
   const user = useAuthStore((s) => s.user)
   const activeChat = useChatStore((s) => s.activeChat)
   const messages = useChatStore((s) => s.messages)
@@ -32,21 +32,49 @@ export default function ChatWindow() {
   const [recording, setRecording] = useState(false)
   const [recordSecs, setRecordSecs] = useState(0)
   const [waveBars, setWaveBars] = useState(Array.from({ length: 24 }, () => 6))
+  const [newMsgCount, setNewMsgCount] = useState(0)
   const recorderRef = useRef(null)
   const chunksRef = useRef([])
   const timerRef = useRef(null)
   const audioCtxRef = useRef(null)
   const analyserRef = useRef(null)
   const rafRef = useRef(null)
+  const cancelRef = useRef(false)
   const listRef = useRef(null)
+  const bottomRef = useRef(null)
 
+  // Instantly jump to bottom when switching chats
   useEffect(() => {
-    if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight
-    const last = messages[messages.length - 1]
-    if (last?.id && typeof last.id === 'number') markSeen(last.id)
-  }, [messages, activeChat, markSeen])
+    setNewMsgCount(0)
+    bottomRef.current?.scrollIntoView({ behavior: 'instant' })
+  }, [activeChat])
 
-  if (!activeChat) return <div className="flex-1 grid place-items-center text-slate-500">Select a chat box to start</div>
+  // Track new messages; scroll if near bottom or own message
+  useEffect(() => {
+    if (messages.length === 0) return
+    const list = listRef.current
+    const isNearBottom = list ? list.scrollHeight - list.scrollTop - list.clientHeight < 120 : true
+    const lastMsg = messages[messages.length - 1]
+    const isOwn = lastMsg?.sender === user?.id || lastMsg?.optimistic
+    if (isNearBottom || isOwn) {
+      setNewMsgCount(0)
+      bottomRef.current?.scrollIntoView({ behavior: isOwn ? 'smooth' : 'instant' })
+    } else {
+      setNewMsgCount((n) => n + 1)
+    }
+    if (lastMsg?.id && typeof lastMsg.id === 'number') markSeen(lastMsg.id)
+  }, [messages, markSeen, user?.id])
+
+  if (!activeChat) return (
+    <div className="flex-1 flex flex-col">
+      <div className="h-14 px-4 border-b border-white/40 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl flex items-center justify-end">
+        <button onClick={onToggleDark} className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-800">
+          {dark ? <FiSun size={18} /> : <FiMoon size={18} />}
+        </button>
+      </div>
+      <div className="flex-1 grid place-items-center text-slate-400 text-sm">Select a chat to start</div>
+    </div>
+  )
   const canManageGroup = user?.role === 'owner' || activeChat.created_by === user?.id
   const memberCount = activeChat.member_count || 0
   const avatarSrc = activeChat.group_avatar_url || `https://placehold.co/40x40/4ade80/ffffff?text=${encodeURIComponent((activeChat.title || 'G').slice(0, 1).toUpperCase())}`
@@ -93,12 +121,14 @@ export default function ChatWindow() {
       const recorder = new MediaRecorder(stream)
       recorderRef.current = recorder
       chunksRef.current = []
+      cancelRef.current = false
       recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data) }
       recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop())
+        if (cancelRef.current) return
         const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
         const file = new File([blob], `voice-${Date.now()}.webm`, { type: 'audio/webm' })
         await sendFile(file, '')
-        stream.getTracks().forEach((t) => t.stop())
       }
       recorder.start()
       setRecording(true)
@@ -133,10 +163,8 @@ export default function ChatWindow() {
     }
     analyserRef.current = null
     setRecording(false)
-    if (send) recorderRef.current.stop()
-    else {
-      recorderRef.current.stream.getTracks().forEach((t) => t.stop())
-    }
+    cancelRef.current = !send
+    recorderRef.current.stop()
   }
 
   const onScroll = () => {
@@ -145,12 +173,21 @@ export default function ChatWindow() {
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-[radial-gradient(circle_at_top_left,rgba(34,197,94,0.1),transparent_35%),url('https://www.transparenttextures.com/patterns/soft-circle-scales.png')]">
-      {/* Chat header */}
-      <div className="h-14 px-4 border-b border-white/40 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl flex items-center justify-between">
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-[radial-gradient(circle_at_top_left,rgba(34,197,94,0.1),transparent_35%),url('https://www.transparenttextures.com/patterns/soft-circle-scales.png')]">
+      {/* Single header — back + avatar + title + dark toggle + settings */}
+      <div className="h-14 px-3 border-b border-white/40 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl flex items-center gap-2 shrink-0">
+        {/* Back button (mobile only) */}
+        <button
+          onClick={onBack}
+          className="md:hidden p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 shrink-0"
+        >
+          <FiArrowLeft size={18} />
+        </button>
+
+        {/* Avatar + title — tappable to open details */}
         <button
           onClick={() => setDetailsOpen(true)}
-          className="flex items-center gap-3 hover:opacity-80 transition min-w-0"
+          className="flex items-center gap-2 flex-1 min-w-0 hover:opacity-80 transition"
         >
           <img
             src={avatarSrc}
@@ -158,31 +195,56 @@ export default function ChatWindow() {
             className="w-9 h-9 rounded-full object-cover border border-white/40 shrink-0"
           />
           <div className="text-left min-w-0">
-            <p className="font-semibold truncate">{activeChat.title}</p>
+            <p className="font-semibold text-sm truncate">{activeChat.title}</p>
             <p className="text-[11px] opacity-50">
               {activeChat.chat_type === 'direct' ? 'Direct Message' : `${memberCount} member${memberCount !== 1 ? 's' : ''}`}
             </p>
           </div>
         </button>
-        <button onClick={() => setSettingsOpen(true)} className="p-2 rounded-full hover:bg-white/60 shrink-0"><FiSettings /></button>
+
+        {/* Dark mode toggle */}
+        <button onClick={onToggleDark} className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 shrink-0">
+          {dark ? <FiSun size={17} /> : <FiMoon size={17} />}
+        </button>
+        {/* Settings */}
+        <button onClick={() => setSettingsOpen(true)} className="p-2 rounded-full hover:bg-white/60 shrink-0">
+          <FiSettings size={17} />
+        </button>
       </div>
 
-      <div ref={listRef} onScroll={onScroll} className="flex-1 overflow-y-auto p-4 space-y-2">
-        {hasMore && <p className="text-xs text-center opacity-60">Scroll up to load older messages</p>}
-        {messages.map((msg) =>
-          msg.is_system ? (
-            <SystemBanner key={msg.id} text={msg.message || msg.display_message} />
-          ) : (
-            <MessageBubble
-              key={msg.id}
-              msg={msg}
-              mine={msg.sender === user?.id}
-              userId={user?.id}
-              memberCount={memberCount}
-              isGroup={activeChat.chat_type !== 'direct'}
-              onReply={() => setReplyTo(msg.id)}
-            />
-          )
+      <div className="flex-1 relative overflow-hidden flex flex-col">
+        <div
+          ref={listRef}
+          onScroll={onScroll}
+          className="flex-1 overflow-y-auto p-4 space-y-2"
+        >
+          {hasMore && <p className="text-xs text-center opacity-60">Scroll up to load older messages</p>}
+          {messages.map((msg) =>
+            msg.is_system ? (
+              <SystemBanner key={msg.id} text={msg.message || msg.display_message} />
+            ) : (
+              <MessageBubble
+                key={msg.id}
+                msg={msg}
+                mine={msg.sender === user?.id}
+                userId={user?.id}
+                memberCount={memberCount}
+                isGroup={activeChat.chat_type !== 'direct'}
+                onReply={() => setReplyTo(msg.id)}
+              />
+            )
+          )}
+          <div ref={bottomRef} />
+        </div>
+
+        {/* Floating new messages badge */}
+        {newMsgCount > 0 && (
+          <button
+            onClick={() => { setNewMsgCount(0); bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }}
+            className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-2 px-4 py-2 rounded-full bg-wa-600 text-white text-xs font-semibold shadow-lg z-10"
+          >
+            ↓ {newMsgCount} new message{newMsgCount > 1 ? 's' : ''}
+          </button>
         )}
       </div>
       <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="px-4 py-2">
@@ -193,22 +255,29 @@ export default function ChatWindow() {
           <button type="button" onClick={() => setAttachMenuOpen((v) => !v)} className="p-2 rounded-full bg-wa-600 text-white"><FiPlus /></button>
           <AttachmentMenu open={attachMenuOpen} onPick={onPickAttachment} onAction={onMenuAction} />
           <label className="hidden"><input type="file" className="hidden" onChange={onFile} /></label>
-          <input value={text} onChange={(e) => { setText(e.target.value); sendTyping() }} className="flex-1 px-3 py-2 bg-transparent outline-none" placeholder="Type a message" />
           {recording ? (
-            <>
-              <div className="flex items-center gap-0.5 px-2">
+            <div className="flex-1 flex items-center gap-2 min-w-0">
+              <div className="flex-1 flex items-end gap-[2px] overflow-hidden h-7">
                 {waveBars.map((h, i) => (
-                  <span key={i} className="w-1 rounded-full bg-slate-500 dark:bg-slate-300" style={{ height: `${h}px` }} />
+                  <span key={i} className="w-[3px] shrink-0 rounded-full bg-emerald-500 dark:bg-emerald-400 transition-all" style={{ height: `${h}px` }} />
                 ))}
               </div>
-              <span className="text-xs text-rose-500">{String(Math.floor(recordSecs / 60)).padStart(2, '0')}:{String(recordSecs % 60).padStart(2, '0')}</span>
-              <button type="button" onClick={() => stopRecording(false)} className="p-2 rounded-full bg-slate-200 text-slate-700"><FiTrash2 /></button>
-              <button type="button" onClick={() => stopRecording(true)} className="p-2 rounded-full bg-wa-600 text-white"><FiSend /></button>
+              <span className="text-xs text-rose-500 shrink-0 tabular-nums">
+                {String(Math.floor(recordSecs / 60)).padStart(2, '0')}:{String(recordSecs % 60).padStart(2, '0')}
+              </span>
+            </div>
+          ) : (
+            <input value={text} onChange={(e) => { setText(e.target.value); sendTyping() }} className="flex-1 px-3 py-2 bg-transparent outline-none min-w-0" placeholder="Type a message" />
+          )}
+          {recording ? (
+            <>
+              <button type="button" onClick={() => stopRecording(false)} className="shrink-0 p-2 rounded-full bg-slate-200 text-slate-700"><FiTrash2 /></button>
+              <button type="button" onClick={() => stopRecording(true)} className="shrink-0 p-2 rounded-full bg-wa-600 text-white"><FiSend /></button>
             </>
           ) : text.trim() ? (
-            <button className="p-2 rounded-full bg-wa-600 text-white"><FiSend /></button>
+            <button className="shrink-0 p-2 rounded-full bg-wa-600 text-white"><FiSend /></button>
           ) : (
-            <button type="button" onClick={startRecording} className="p-2 rounded-full bg-wa-600 text-white"><FiMic /></button>
+            <button type="button" onClick={startRecording} className="shrink-0 p-2 rounded-full bg-wa-600 text-white"><FiMic /></button>
           )}
         </form>
       </motion.div>

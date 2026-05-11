@@ -33,7 +33,7 @@ services:
     restart: unless-stopped
 
     env_file:
-      - ./backend/.env.example
+      - ./backend/.env
 
     volumes:
       - ./backend:/app

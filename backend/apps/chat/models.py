@@ -57,6 +57,7 @@ class ChatBoxMember(models.Model):
 class Message(models.Model):
     ATTACH_IMAGE = 'image'
     ATTACH_VIDEO = 'video'
+    ATTACH_AUDIO = 'audio'
     ATTACH_PDF = 'pdf'
     ATTACH_DOC = 'document'
     ATTACH_ARCHIVE = 'archive'
@@ -64,6 +65,7 @@ class Message(models.Model):
     ATTACHMENT_TYPE_CHOICES = [
         (ATTACH_IMAGE, 'Image'),
         (ATTACH_VIDEO, 'Video'),
+        (ATTACH_AUDIO, 'Audio'),
         (ATTACH_PDF, 'PDF'),
         (ATTACH_DOC, 'Document'),
         (ATTACH_ARCHIVE, 'Archive'),

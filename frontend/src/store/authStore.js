@@ -6,11 +6,16 @@ export const useAuthStore = create((set) => ({
   loading: false,
   async login(email, password) {
     set({ loading: true })
-    const { data } = await api.post('/auth/login/', { email, password })
-    sessionStorage.setItem('access', data.access)
-    sessionStorage.setItem('refresh', data.refresh)
-    sessionStorage.setItem('user', JSON.stringify(data.user))
-    set({ user: data.user, loading: false })
+    try {
+      const { data } = await api.post('/auth/login/', { email, password })
+      sessionStorage.setItem('access', data.access)
+      sessionStorage.setItem('refresh', data.refresh)
+      sessionStorage.setItem('user', JSON.stringify(data.user))
+      set({ user: data.user, loading: false })
+    } catch (err) {
+      set({ loading: false })
+      throw err
+    }
   },
   logout() {
     sessionStorage.removeItem('access')
